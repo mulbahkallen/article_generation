@@ -23,7 +23,7 @@ if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.stop()
 
 # Set the OpenAI API key (do not create a custom client)
-openai.api_key = openai_api_key
+openai_client = openai.OpenAI(api_key=openai_api_key)
 
 # Initialize Google Maps Client
 gmaps = googlemaps.Client(key=places_api_key)
@@ -265,7 +265,7 @@ Competitors Data:
 Provide a deep, data-driven, actionable analysis with specific SEO recommendations.
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a highly skilled local SEO consultant."},
