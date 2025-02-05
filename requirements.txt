@@ -1,0 +1,6 @@
+googlemaps
+pandas
+numpy
+plotly
+requests
+beautifulsoup4
