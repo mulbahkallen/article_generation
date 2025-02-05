@@ -22,7 +22,7 @@ if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.error("🔑 OpenAI API Key is missing or incorrect! Please update it in Streamlit Secrets.")
     st.stop()
 
-# Set the OpenAI API key directly on the openai module (no custom client)
+# Set the API key directly on the openai module (no custom client needed)
 openai.api_key = openai_api_key
 
 # Initialize Google Maps Client
