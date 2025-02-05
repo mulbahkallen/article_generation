@@ -5,12 +5,14 @@ import time
 # -------------------------------------------------------------------------
 # 1. Load API Key from Streamlit Secrets
 # -------------------------------------------------------------------------
-openai_api_key = st.secrets.get("OPENAI_API_KEY")
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+
 if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.error("🔑 OpenAI API Key is missing or incorrect! Please update it in Streamlit Secrets.")
     st.stop()
 
-openai.api_key = openai_api_key
+# Create OpenAI client like in your working snippet
+openai_client = openai.OpenAI(api_key=openai_api_key)
 
 # -------------------------------------------------------------------------
 # 2. Helper Function to Generate SEO Article via OpenAI
