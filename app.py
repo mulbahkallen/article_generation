@@ -5,14 +5,12 @@ import time
 # -------------------------------------------------------------------------
 # 1. Load API Key from Streamlit Secrets
 # -------------------------------------------------------------------------
-openai_api_key = st.secrets["OPENAI_API_KEY"]
-
+openai_api_key = st.secrets.get("OPENAI_API_KEY")
 if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.error("🔑 OpenAI API Key is missing or incorrect! Please update it in Streamlit Secrets.")
     st.stop()
 
-# Create OpenAI client like in your working snippet
-openai_client = openai.OpenAI(api_key=openai_api_key)
+openai.api_key = openai_api_key
 
 # -------------------------------------------------------------------------
 # 2. Helper Function to Generate SEO Article via OpenAI
@@ -25,7 +23,8 @@ def generate_seo_article(data: dict) -> str:
     prompt = "You are an expert SEO content writer. Generate an SEO optimized article with the following specifications:\n\n"
     
     # Core Inputs
-    prompt += f"Primary Keyword: {data['primary_keyword']}\n"
+    # Note: Joining list of primary keywords into a comma-separated string.
+    prompt += f"Primary Keywords: {', '.join(data['primary_keywords'])}\n"
     prompt += f"Secondary Keywords: {data['secondary_keywords']}\n"
     prompt += f"Tertiary Keywords: {data['tertiary_keywords']}\n"
     prompt += f"Target Area: {data['target_area']}\n"
@@ -45,7 +44,7 @@ def generate_seo_article(data: dict) -> str:
         prompt += f"  Website URL: {local.get('website_url', '')}\n"
         prompt += f"  Google My Business Listing: {local.get('gmb', '')}\n\n"
     
-    # Meta & Optimization Options
+    # Optional Meta & Optimization Options
     if data.get("meta_title") or data.get("meta_description"):
         prompt += "Meta Title & Description:\n"
         prompt += f"  Title: {data.get('meta_title', '')}\n"
@@ -59,7 +58,7 @@ def generate_seo_article(data: dict) -> str:
     if data["image_details"]:
         image_details = data["image_details"]
         prompt += "Image Optimization Details:\n"
-        prompt += "  Image Alt Text: [Auto-generated based on Primary Keyword]\n"
+        prompt += "  Image Alt Text: [Auto-generated based on Primary Keywords]\n"
         prompt += f"  Image File Naming Format: {image_details.get('file_naming_format', '')}\n\n"
     
     # Social Media Sharing & Additional Notes
@@ -69,7 +68,7 @@ def generate_seo_article(data: dict) -> str:
     
     # Output Format instructions
     prompt += "Output Format:\n"
-    prompt += "Title: [Auto-generated using Primary Keyword]\n"
+    prompt += "Title: [Auto-generated using Primary Keywords]\n"
     prompt += "Meta Description: [Auto-generated based on keyword strategy and user input]\n"
     prompt += "Introduction: [Generated based on input, introducing the topic and location relevance]\n"
     prompt += "Main Content Sections:\n"
@@ -95,7 +94,7 @@ def generate_seo_article(data: dict) -> str:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1500  # Adjust this as needed based on desired article length
+            max_tokens=1500  # Adjust based on desired article length
         )
         article = response.choices[0].message.content
         return article
@@ -112,7 +111,11 @@ def main():
     # Create a form for all user input fields
     with st.form("seo_article_form"):
         st.header("User Input Fields")
-        primary_keyword = st.text_input("Primary Keyword", placeholder="Enter Primary Keyword")
+        # Now asking for multiple primary keywords as comma-separated values.
+        primary_keywords_str = st.text_input("Primary Keywords (comma-separated)", placeholder="Enter Primary Keywords (comma-separated)")
+        # Convert the string into a list by splitting on commas and stripping whitespace.
+        primary_keywords = [kw.strip() for kw in primary_keywords_str.split(",") if kw.strip()]
+        
         secondary_keywords = st.text_input("Secondary Keywords (comma-separated)", placeholder="Enter Secondary Keywords, comma-separated")
         tertiary_keywords = st.text_input("Tertiary Keywords (comma-separated)", placeholder="Enter Tertiary Keywords, comma-separated")
         target_area = st.text_input("Target Area (Location-Based SEO)", placeholder="Enter City, State, or Region")
@@ -173,7 +176,7 @@ def main():
     # Once the form is submitted, compile all data and generate the article
     if submitted:
         data = {
-            "primary_keyword": primary_keyword,
+            "primary_keywords": primary_keywords,  # now a list
             "secondary_keywords": secondary_keywords,
             "tertiary_keywords": tertiary_keywords,
             "target_area": target_area,
