@@ -3,6 +3,12 @@ import openai
 import time
 
 # -------------------------------------------------------------------------
+# NOTE: If you encounter errors related to openai.ChatCompletion,
+# please run `openai migrate` in your terminal or pin the version:
+# pip install openai==0.28.0
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
 # 1. Load API Key from Streamlit Secrets
 # -------------------------------------------------------------------------
 openai_api_key = st.secrets.get("OPENAI_API_KEY")
@@ -19,11 +25,9 @@ def generate_seo_article(data: dict) -> str:
     """
     Build a prompt based on user inputs and request an SEO optimized article from OpenAI.
     """
-    # Build a detailed prompt with the required specifications.
     prompt = "You are an expert SEO content writer. Generate an SEO optimized article with the following specifications:\n\n"
     
-    # Core Inputs
-    # Note: Joining list of primary keywords into a comma-separated string.
+    # Core Inputs (joining list of primary keywords)
     prompt += f"Primary Keywords: {', '.join(data['primary_keywords'])}\n"
     prompt += f"Secondary Keywords: {data['secondary_keywords']}\n"
     prompt += f"Tertiary Keywords: {data['tertiary_keywords']}\n"
@@ -94,7 +98,7 @@ def generate_seo_article(data: dict) -> str:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1500  # Adjust based on desired article length
+            max_tokens=1500
         )
         article = response.choices[0].message.content
         return article
@@ -102,7 +106,48 @@ def generate_seo_article(data: dict) -> str:
         return f"Error generating article: {e}"
 
 # -------------------------------------------------------------------------
-# 3. Streamlit Main App
+# 3. Helper Function to Generate Title & Meta Description Based on Article
+# -------------------------------------------------------------------------
+def generate_title_and_meta(article: str) -> (str, str):
+    """
+    Generate an SEO optimized title and meta description based on the article content.
+    """
+    prompt = f"""
+You are an expert SEO strategist and copywriter. Based on the following article, please generate an SEO-optimized title and meta description that accurately reflect the article's content and adhere to SEO best practices.
+
+Article:
+{article}
+
+Provide your answer in the following format:
+Title: <Your SEO optimized title>
+Meta Description: <Your SEO optimized meta description>
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert SEO strategist."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        output = response.choices[0].message.content
+        
+        # Parse the output to extract title and meta description
+        title = ""
+        meta_desc = ""
+        for line in output.splitlines():
+            if line.startswith("Title:"):
+                title = line[len("Title:"):].strip()
+            elif line.startswith("Meta Description:"):
+                meta_desc = line[len("Meta Description:"):].strip()
+        return title, meta_desc
+    except Exception as e:
+        return f"Error generating title/meta: {e}", ""
+
+# -------------------------------------------------------------------------
+# 4. Streamlit Main App
 # -------------------------------------------------------------------------
 def main():
     st.title("SEO Optimized Article Generation Template")
@@ -111,16 +156,15 @@ def main():
     # Create a form for all user input fields
     with st.form("seo_article_form"):
         st.header("User Input Fields")
-        # Now asking for multiple primary keywords as comma-separated values.
+        # Multiple primary keywords (comma-separated)
         primary_keywords_str = st.text_input("Primary Keywords (comma-separated)", placeholder="Enter Primary Keywords (comma-separated)")
-        # Convert the string into a list by splitting on commas and stripping whitespace.
         primary_keywords = [kw.strip() for kw in primary_keywords_str.split(",") if kw.strip()]
         
         secondary_keywords = st.text_input("Secondary Keywords (comma-separated)", placeholder="Enter Secondary Keywords, comma-separated")
         tertiary_keywords = st.text_input("Tertiary Keywords (comma-separated)", placeholder="Enter Tertiary Keywords, comma-separated")
         target_area = st.text_input("Target Area (Location-Based SEO)", placeholder="Enter City, State, or Region")
         target_audience = st.text_area("Target Audience", placeholder="Describe the target demographic")
-        article_length = st.number_input("Article Length (Word Count)", min_value=300, max_value=5000, value=1000, step=100)
+        article_length = st.number_input("Article Length (Word Count)", min_value=300, max_value=5000, value=1200, step=100)
 
         article_type = st.selectbox("Article Type", ["Blog Post", "Service Page", "Landing Page", "Product Page", "Other"])
         if article_type == "Other":
@@ -168,15 +212,13 @@ def main():
             }
         
         social_media_sharing = st.selectbox("Social Media Sharing Optimization", ["Yes", "No"])
-        
         additional_notes = st.text_area("Additional Notes", placeholder="Provide any extra requirements")
         
         submitted = st.form_submit_button("Generate SEO Article")
     
-    # Once the form is submitted, compile all data and generate the article
     if submitted:
         data = {
-            "primary_keywords": primary_keywords,  # now a list
+            "primary_keywords": primary_keywords,
             "secondary_keywords": secondary_keywords,
             "tertiary_keywords": tertiary_keywords,
             "target_area": target_area,
@@ -197,18 +239,32 @@ def main():
         
         with st.spinner("Generating SEO optimized article..."):
             article = generate_seo_article(data)
-            time.sleep(1)  # Optional: simulate processing delay
+            time.sleep(1)
         
-        st.header("Generated SEO Optimized Article")
-        st.write(article)
-        
-        # Allow the user to download the generated article as a text file
-        st.download_button(
-            label="Download Article as Text",
-            data=article,
-            file_name="seo_optimized_article.txt",
-            mime="text/plain"
-        )
+        if article.startswith("Error generating article:"):
+            st.error(article)
+        else:
+            st.header("Generated SEO Optimized Article")
+            st.write(article)
+            
+            # Generate Title and Meta Description based on the article
+            with st.spinner("Generating Title and Meta Description..."):
+                title, meta_desc = generate_title_and_meta(article)
+                time.sleep(1)
+            
+            st.subheader("Article Title")
+            st.write(title)
+            
+            st.subheader("Meta Description")
+            st.write(meta_desc)
+            
+            # Allow the user to download the generated article as a text file
+            st.download_button(
+                label="Download Article as Text",
+                data=article,
+                file_name="seo_optimized_article.txt",
+                mime="text/plain"
+            )
 
 if __name__ == "__main__":
     main()
