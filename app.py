@@ -1,12 +1,7 @@
 import streamlit as st
 import openai
+import asyncio
 import time
-
-# -------------------------------------------------------------------------
-# NOTE: If you encounter errors related to openai.ChatCompletion,
-# please run `openai migrate` in your terminal or pin the version:
-# pip install openai==0.28.0
-# -------------------------------------------------------------------------
 
 # -------------------------------------------------------------------------
 # 1. Load API Key from Streamlit Secrets
@@ -15,16 +10,12 @@ openai_api_key = st.secrets.get("OPENAI_API_KEY")
 if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.error("🔑 OpenAI API Key is missing or incorrect! Please update it in Streamlit Secrets.")
     st.stop()
-
 openai.api_key = openai_api_key
 
 # -------------------------------------------------------------------------
-# 2. Helper Function to Generate SEO Article via OpenAI
+# 2. Asynchronous Helper Function to Generate the SEO Article
 # -------------------------------------------------------------------------
-def generate_seo_article(data: dict) -> str:
-    """
-    Build a prompt based on user inputs and request an SEO optimized article from OpenAI.
-    """
+async def async_generate_seo_article(data: dict) -> str:
     prompt = "You are an expert SEO content writer. Generate an SEO optimized article with the following specifications:\n\n"
     
     # Core Inputs (joining list of primary keywords)
@@ -91,7 +82,7 @@ def generate_seo_article(data: dict) -> str:
     prompt += "Please generate the complete article accordingly."
     
     try:
-        response = openai.ChatCompletion.create(
+        response = await openai.ChatCompletion.acreate(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a highly skilled SEO content writer."},
@@ -100,18 +91,17 @@ def generate_seo_article(data: dict) -> str:
             temperature=0.7,
             max_tokens=1500
         )
-        article = response.choices[0].message.content
-        return article
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error generating article: {e}"
 
+def generate_seo_article(data: dict) -> str:
+    return asyncio.run(async_generate_seo_article(data))
+
 # -------------------------------------------------------------------------
-# 3. Helper Function to Generate Title & Meta Description Based on Article
+# 3. Asynchronous Helper Function to Generate Title & Meta Description
 # -------------------------------------------------------------------------
-def generate_title_and_meta(article: str) -> (str, str):
-    """
-    Generate an SEO optimized title and meta description based on the article content.
-    """
+async def async_generate_title_and_meta(article: str) -> (str, str):
     prompt = f"""
 You are an expert SEO strategist and copywriter. Based on the following article, please generate an SEO-optimized title and meta description that accurately reflect the article's content and adhere to SEO best practices.
 
@@ -123,7 +113,7 @@ Title: <Your SEO optimized title>
 Meta Description: <Your SEO optimized meta description>
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = await openai.ChatCompletion.acreate(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are an expert SEO strategist."},
@@ -133,8 +123,6 @@ Meta Description: <Your SEO optimized meta description>
             max_tokens=300
         )
         output = response.choices[0].message.content
-        
-        # Parse the output to extract title and meta description
         title = ""
         meta_desc = ""
         for line in output.splitlines():
@@ -146,6 +134,9 @@ Meta Description: <Your SEO optimized meta description>
     except Exception as e:
         return f"Error generating title/meta: {e}", ""
 
+def generate_title_and_meta(article: str) -> (str, str):
+    return asyncio.run(async_generate_title_and_meta(article))
+
 # -------------------------------------------------------------------------
 # 4. Streamlit Main App
 # -------------------------------------------------------------------------
@@ -156,10 +147,8 @@ def main():
     # Create a form for all user input fields
     with st.form("seo_article_form"):
         st.header("User Input Fields")
-        # Multiple primary keywords (comma-separated)
         primary_keywords_str = st.text_input("Primary Keywords (comma-separated)", placeholder="Enter Primary Keywords (comma-separated)")
         primary_keywords = [kw.strip() for kw in primary_keywords_str.split(",") if kw.strip()]
-        
         secondary_keywords = st.text_input("Secondary Keywords (comma-separated)", placeholder="Enter Secondary Keywords, comma-separated")
         tertiary_keywords = st.text_input("Tertiary Keywords (comma-separated)", placeholder="Enter Tertiary Keywords, comma-separated")
         target_area = st.text_input("Target Area (Location-Based SEO)", placeholder="Enter City, State, or Region")
@@ -207,9 +196,7 @@ def main():
         image_file_naming = st.text_input("Image File Names (specify naming format)", placeholder="Specify Naming Format")
         image_details = {}
         if uploaded_image or image_file_naming:
-            image_details = {
-                "file_naming_format": image_file_naming
-            }
+            image_details = {"file_naming_format": image_file_naming}
         
         social_media_sharing = st.selectbox("Social Media Sharing Optimization", ["Yes", "No"])
         additional_notes = st.text_area("Additional Notes", placeholder="Provide any extra requirements")
@@ -247,7 +234,6 @@ def main():
             st.header("Generated SEO Optimized Article")
             st.write(article)
             
-            # Generate Title and Meta Description based on the article
             with st.spinner("Generating Title and Meta Description..."):
                 title, meta_desc = generate_title_and_meta(article)
                 time.sleep(1)
@@ -258,7 +244,6 @@ def main():
             st.subheader("Meta Description")
             st.write(meta_desc)
             
-            # Allow the user to download the generated article as a text file
             st.download_button(
                 label="Download Article as Text",
                 data=article,
