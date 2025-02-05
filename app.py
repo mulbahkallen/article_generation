@@ -22,8 +22,8 @@ if not openai_api_key or not openai_api_key.startswith("sk-"):
     st.error("🔑 OpenAI API Key is missing or incorrect! Please update it in Streamlit Secrets.")
     st.stop()
 
-# Set the OpenAI API key (do not create a custom client)
-openai_client = openai.OpenAI(api_key=openai_api_key)
+# Set the OpenAI API key directly on the openai module (no custom client)
+openai.api_key = openai_api_key
 
 # Initialize Google Maps Client
 gmaps = googlemaps.Client(key=places_api_key)
@@ -265,7 +265,7 @@ Competitors Data:
 Provide a deep, data-driven, actionable analysis with specific SEO recommendations.
     """
     try:
-        response = openai_client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a highly skilled local SEO consultant."},
@@ -401,7 +401,7 @@ def main():
         primary_keywords_str = st.text_input("Primary Keywords (comma-separated)", placeholder="Enter Primary Keywords (comma-separated)")
         primary_keywords = [kw.strip() for kw in primary_keywords_str.split(",") if kw.strip()]
         secondary_keywords = st.text_input("Secondary Keywords (comma-separated)", placeholder="Enter Secondary Keywords, comma-separated")
-        tertiary_keywords = st.text_input("Tertiary Keywords (comma-separated)", placeholder="Enter Tertiary Keywords, comma-separated")
+        tertiary_keywords = st.text_input("Tertiary Keywords (comma-separated)", placeholder="Enter Tertiary Keywords (comma-separated)")
         target_area = st.text_input("Target Area (Location-Based SEO)", placeholder="Enter City, State, or Region")
         target_audience = st.text_area("Target Audience", placeholder="Describe the target demographic")
         article_length = st.number_input("Article Length (Word Count)", min_value=300, max_value=5000, value=1200, step=100)
