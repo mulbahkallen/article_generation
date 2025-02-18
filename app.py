@@ -2,94 +2,85 @@ import streamlit as st
 import openai
 import nltk
 
-# If you haven't downloaded NLTK tokenizers yet, uncomment below (run once):
+# If you haven't already downloaded punkt:
 # nltk.download('punkt')
 
 #######################################
 # 1. Configure OpenAI
 #######################################
-openai.api_key = st.secrets["OPENAI_API_KEY"]  # or your method for storing API keys
+openai.api_key = st.secrets["OPENAI_API_KEY"]  # or however you store your key
 
 #######################################
-# 2. Default Field Requirements
+# 2. Define Different Page Structures
 #######################################
-DEFAULT_FIELD_REQUIREMENTS = {
-    "h1": {
-        "label": "H1 Title",
-        "min_chars": 20,
-        "max_chars": 60
-    },
-    "tagline": {
-        "label": "Tagline",
-        "min_words": 6,
-        "max_words": 12
-    },
-    "intro_blurb": {
-        "label": "Intro Blurb",
-        "min_words": 15,
-        "max_words": 20
-    },
-    "h2_1": {
-        "label": "H2-1 Title",
-        "min_chars": 30,
-        "max_chars": 70
-    },
-    "body_1": {
-        "label": "Body 1",
-        "min_sentences": 3,
-        "max_sentences": 5
-    },
-    "h2_2_services": {
-        "label": "H2-2 (Services)",
-        "min_chars": 30,
-        "max_chars": 70
-    },
-    "service_collection": {
-        "label": "Services Section"
-    },
-    "h2_3": {
-        "label": "H2-3 Title",
-        "min_chars": 30,
-        "max_chars": 70
-    },
-    "body_2": {
-        "label": "Body 2",
-        "min_sentences": 3,
-        "max_sentences": 5
-    },
-    "h2_4_about": {
-        "label": "H2-4 (About Us)",
-        "min_chars": 30,
-        "max_chars": 70
-    },
-    "body_3": {
-        "label": "Body 3",
-        "min_sentences": 3,
-        "max_sentences": 5
-    },
-    "areas_we_serve": {
-        "label": "Areas We Serve"
-    },
-    "reviews": {
-        "label": "Reviews Section"
-    },
-    "contact_form": {
-        "label": "Contact Form"
-    },
-    "nap": {
-        "label": "Name, Address, Phone"
-    },
-    "footer": {
-        "label": "Footer Section"
-    },
-    "title_tag": {
-        "label": "SEO Title Tag",
-        "max_chars": 60
-    },
-    "meta_description": {
-        "label": "Meta Description",
-        "max_chars": 160
-    }
+# Each page type has its own list of sections with default constraints.
+# You can expand or modify these as needed.
+PAGE_DEFAULT_STRUCTURES = {
+    "Home": [
+        {"key": "h1", "label": "H1 Title", "min_chars": 20, "max_chars": 60},
+        {"key": "tagline", "label": "Tagline", "min_words": 6, "max_words": 12},
+        {"key": "intro_blurb", "label": "Intro/Welcome Blurb", "min_words": 15, "max_words": 25},
+        {"key": "h2_services", "label": "H2 (Services)", "min_chars": 30, "max_chars": 70},
+        {"key": "services_body", "label": "Services Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "h2_about", "label": "H2 (About)", "min_chars": 30, "max_chars": 70},
+        {"key": "about_body", "label": "About Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "reviews", "label": "Reviews Section"},
+        {"key": "areas_we_serve", "label": "Areas We Serve"},
+        {"key": "call_to_action", "label": "CTA/Conversion Prompt"},
+        {"key": "nap", "label": "Name, Address, Phone"},
+        {"key": "footer", "label": "Footer Section"},
+        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
+        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+    ],
+    "Service": [
+        {"key": "h1_service", "label": "H1 (Service Name)", "min_chars": 20, "max_chars": 60},
+        {"key": "service_intro", "label": "Service Intro", "min_sentences": 2, "max_sentences": 3},
+        {"key": "h2_benefits", "label": "H2 (Key Benefits)", "min_chars": 30, "max_chars": 70},
+        {"key": "benefits_body", "label": "Benefits Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "h2_pricing", "label": "H2 (Pricing/Process)", "min_chars": 30, "max_chars": 70},
+        {"key": "pricing_body", "label": "Pricing/Process Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "call_to_action", "label": "CTA/Conversion Prompt"},
+        {"key": "nap", "label": "Name, Address, Phone"},
+        {"key": "footer", "label": "Footer Section"},
+        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
+        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+    ],
+    "About Us": [
+        {"key": "h1_about", "label": "H1 (About Us Title)", "min_chars": 20, "max_chars": 60},
+        {"key": "about_intro", "label": "About Intro", "min_sentences": 2, "max_sentences": 3},
+        {"key": "h2_history", "label": "H2 (History)", "min_chars": 30, "max_chars": 70},
+        {"key": "history_body", "label": "History Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "h2_mission", "label": "H2 (Mission/Vision)", "min_chars": 30, "max_chars": 70},
+        {"key": "mission_body", "label": "Mission/Vision Body", "min_sentences": 2, "max_sentences": 4},
+        {"key": "team_intro", "label": "Team/People Intro", "min_sentences": 2, "max_sentences": 4},
+        {"key": "call_to_action", "label": "CTA"},
+        {"key": "nap", "label": "Name, Address, Phone"},
+        {"key": "footer", "label": "Footer Section"},
+        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
+        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+    ],
+    "Blog/Article": [
+        {"key": "h1_blog", "label": "H1 (Article Title)", "min_chars": 20, "max_chars": 70},
+        {"key": "intro_paragraph", "label": "Intro Paragraph", "min_sentences": 2, "max_sentences": 3},
+        {"key": "h2_subtopic1", "label": "H2 (Subtopic 1)", "min_chars": 30, "max_chars": 70},
+        {"key": "body_subtopic1", "label": "Body Subtopic 1", "min_sentences": 2, "max_sentences": 5},
+        {"key": "h2_subtopic2", "label": "H2 (Subtopic 2)", "min_chars": 30, "max_chars": 70},
+        {"key": "body_subtopic2", "label": "Body Subtopic 2", "min_sentences": 2, "max_sentences": 5},
+        {"key": "conclusion", "label": "Conclusion", "min_sentences": 2, "max_sentences": 3},
+        {"key": "footer", "label": "Footer (Optional)"},
+        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
+        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+    ],
+    "Other": [
+        {"key": "h1_other", "label": "H1 Title", "min_chars": 20, "max_chars": 60},
+        {"key": "intro_other", "label": "Intro Section", "min_sentences": 2, "max_sentences": 3},
+        {"key": "body_other", "label": "Main Body", "min_sentences": 2, "max_sentences": 5},
+        {"key": "call_to_action", "label": "CTA (Optional)"},
+        {"key": "nap", "label": "Name, Address, Phone"},
+        {"key": "footer", "label": "Footer Section"},
+        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
+        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+    ]
 }
 
 #######################################
@@ -97,7 +88,7 @@ DEFAULT_FIELD_REQUIREMENTS = {
 #######################################
 def calculate_flesch_reading_ease(text: str) -> float:
     """
-    Rough calculation of the Flesch Reading Ease score (0-100+).
+    Approximate Flesch Reading Ease score (0–100+).
     Higher = more readable.
     """
     sentences = nltk.sent_tokenize(text)
@@ -126,248 +117,233 @@ def calculate_flesch_reading_ease(text: str) -> float:
     return round(score, 2)
 
 #######################################
-# 4. Build Prompt
+# 4. Build a Single Cohesive Prompt
 #######################################
 def build_cohesive_prompt(data: dict) -> str:
     """
-    Builds a single, cohesive prompt for the AI to generate
-    a single block of content (NOT broken into small sections).
-    Includes local SEO details, page type, brand tone, etc.
+    Builds a single prompt for a unified piece of content,
+    reflecting the page's unique structure.
     """
-    # Basic info
+    page_type = data.get("page_type", "Home")
+    location = data.get("location", "")
+    brand_tone = data.get("brand_tone", "Professional")
+
     primary_keywords = ', '.join(data.get('primary_keywords', []))
     secondary_keywords = ', '.join(data.get('secondary_keywords', []))
-    page_type = data.get('page_type', 'Home')
-    location = data.get('location', '')
-    brand_tone = data.get('brand_tone', 'Professional')
 
-    # Additional details for each page type
     page_specific_info = data.get('page_specific_info', {})
+    structure = data.get("structure", [])  # the list of sections for this page type
 
-    # Advanced constraints
-    field_reqs = data.get("field_requirements", DEFAULT_FIELD_REQUIREMENTS)
+    prompt = f"""You are an advanced SEO copywriter with local SEO expertise.
 
-    # We’ll embed constraints in the text, but we’ll instruct the model
-    # to produce a single cohesive piece (with headings, paragraphs, etc.).
-    # The user’s “advanced” constraints will guide how short/long each
-    # heading or paragraph can be, though we will keep them flexible in language.
-
-    prompt = f"""You are an advanced SEO copywriter specialized in local optimization.
-    
 Page Type: {page_type}
-Location: {location}
-Brand / Tone: {brand_tone}
-
+Location/Region: {location}
+Tone/Style: {brand_tone}
 Primary Keywords: {primary_keywords}
 Secondary Keywords: {secondary_keywords}
 
 Additional Page-Specific Details:
 {page_specific_info}
 
-You will create a **single cohesive piece of content**, suitable for a {page_type} page, 
-optimized for local SEO. Follow these best practices:
-- Use H1, H2, H3 as appropriate, but produce them in a single flow of text.
-- Naturally integrate the location (e.g., city or region) to emphasize local SEO.
-- Use the primary/secondary keywords in a natural style.
-- Insert alt text placeholders for images (e.g., (alt="describe image content")).
-- Include at least one internal link placeholder, e.g., [Internal Link: /some-other-page].
-- Include at least one external link placeholder, e.g., [External Link: https://example.com].
-- If relevant, mention structured data possibilities (like FAQ or LocalBusiness schema).
-- Consider adding calls to action, contact details, or special notes that match the page type.
+Below is the structure for this {page_type} page with recommended constraints. 
+Please produce a single cohesive piece of text that uses headings (H1, H2, H3, etc.) but is not separated 
+into disjoint sections. The final output should read like a well-structured page.
 
-Below are content length guidelines from advanced user constraints. 
-Do not produce a separate piece for each item; instead, unify them into a cohesive article:
+Incorporate:
+- Local SEO references to the location
+- Natural usage of primary/secondary keywords
+- Alt text placeholders for images (e.g., (alt="..."))
+- At least one internal link placeholder ([Internal Link: /some-page]) 
+- At least one external link placeholder ([External Link: https://example.com])
+- Potential calls to action or conversion prompts
+- If relevant, mention structured data or schema
 
+Here is the list of sections (with constraints) that should guide your writing:
 """
-    # We’ll loop through each field, but just tell the model about them for guidance:
-    for key, info in field_reqs.items():
-        label = info.get("label", key)
-        constraint_parts = []
+    for section in structure:
+        label = section.get("label", "Unnamed Section")
+        constraints = []
 
-        # Combine the constraints (char, words, sentences)
-        if "min_chars" in info and "max_chars" in info:
-            constraint_parts.append(f"{info['min_chars']}-{info['max_chars']} chars")
-        elif "max_chars" in info:
-            constraint_parts.append(f"up to {info['max_chars']} chars")
+        if "min_chars" in section and "max_chars" in section:
+            constraints.append(f"{section['min_chars']}-{section['max_chars']} chars")
+        elif "max_chars" in section:
+            constraints.append(f"up to {section['max_chars']} chars")
 
-        if "min_words" in info and "max_words" in info:
-            constraint_parts.append(f"{info['min_words']}-{info['max_words']} words")
+        if "min_words" in section and "max_words" in section:
+            constraints.append(f"{section['min_words']}-{section['max_words']} words")
 
-        if "min_sentences" in info and "max_sentences" in info:
-            constraint_parts.append(f"{info['min_sentences']}-{info['max_sentences']} sentences")
+        if "min_sentences" in section and "max_sentences" in section:
+            constraints.append(f"{section['min_sentences']}-{section['max_sentences']} sentences")
 
-        if constraint_parts:
-            joined_constraints = ", ".join(constraint_parts)
-            prompt += f"- {label}: {joined_constraints}\n"
+        if constraints:
+            prompt += f"- {label}: {', '.join(constraints)}\n"
         else:
-            prompt += f"- {label}: (no explicit constraint)\n"
+            prompt += f"- {label}\n"
 
     prompt += """
-Use these constraints as **guidelines**, but present your final copy as a single, coherent text block. 
-Write in a style that reflects the brand_tone. 
-Ensure the text can stand alone as a fully formed page (intro, body, conclusion, etc.).
-"""
+Please present all content in one cohesive flow, using the headings in a natural progression. 
+Ensure it can stand alone as a full page.
 
+Now, generate the final text accordingly.
+"""
     return prompt
 
 #######################################
-# 5. Generate Content (new openai>=1.0.0)
+# 5. Generate the Content Using openai>=1.0.0
 #######################################
 def generate_cohesive_content(data: dict) -> str:
-    """
-    Uses openai.chat.completions.create to get a single cohesive piece of content.
-    """
     prompt = build_cohesive_prompt(data)
-
     try:
-        # If you have GPT-4 access, you can set model="gpt-4"
+        # If you have GPT-4 access, you can specify model="gpt-4"
         response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",  # or "gpt-4" if you have access
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
+            max_tokens=2500,
             temperature=0.7
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error generating homepage content:\n\n{e}"
+        return f"Error generating content:\n\n{e}"
 
 #######################################
-# 6. Streamlit Main App
+# 6. Streamlit App
 #######################################
 def main():
-    st.title("All-in-One Local SEO Content Generator")
+    st.title("Local SEO Content Generator (Multi-Page Type)")
 
-    # 6.1 Page Type Selection
+    # Page type selection
     page_type = st.selectbox(
         "Select Page Type",
         ["Home", "Service", "About Us", "Blog/Article", "Other"],
         index=0
     )
 
-    # 6.2 Additional Questions Based on Page Type
+    # Page-specific extra questions
     page_specific_info = {}
     if page_type == "Home":
         st.subheader("Home Page Details")
         page_specific_info["brand_name"] = st.text_input("Brand Name (optional)")
         page_specific_info["main_products_services"] = st.text_input("Main Products/Services (optional)")
-        page_specific_info["highlight_features"] = st.text_area("Highlight Features (optional)")
+        page_specific_info["home_highlights"] = st.text_area("Highlight Features or Unique Selling Points (optional)")
     elif page_type == "Service":
         st.subheader("Service Page Details")
         page_specific_info["service_name"] = st.text_input("Service Name")
-        page_specific_info["service_key_points"] = st.text_area("Key Selling Points or USPs")
+        page_specific_info["service_key_points"] = st.text_area("Key Selling Points/USPs")
     elif page_type == "About Us":
         st.subheader("About Us Page Details")
         page_specific_info["company_history"] = st.text_area("Short Company History (optional)")
         page_specific_info["mission_vision"] = st.text_area("Mission/Vision (optional)")
     elif page_type == "Blog/Article":
-        st.subheader("Blog or Article Details")
-        page_specific_info["topic"] = st.text_input("Topic/Title of Article")
-        page_specific_info["audience"] = st.text_input("Target Audience")
+        st.subheader("Blog/Article Page Details")
+        page_specific_info["blog_topic"] = st.text_input("Topic/Title of Article")
+        page_specific_info["target_audience"] = st.text_input("Target Audience or Niche")
     else:
-        st.subheader("Custom Page Type Details")
+        st.subheader("Custom/Other Page Details")
         page_specific_info["description"] = st.text_area("Brief Description of This Page")
 
-    # 6.3 Common Local SEO / Additional Inputs
-    location = st.text_input("Location (City, Region, etc.)", "")
-    brand_tone = st.selectbox(
-        "Brand Tone/Style",
-        ["Professional", "Friendly", "Casual", "Technical", "Persuasive", "Other"]
-    )
+    # Common inputs for local SEO
+    location = st.text_input("Location/Region (e.g., City, State)", "")
+    brand_tone = st.selectbox("Brand Tone/Style", ["Professional", "Friendly", "Casual", "Technical", "Persuasive", "Other"])
     if brand_tone == "Other":
-        brand_tone = st.text_input("Please specify your desired tone/style", "Professional")
+        brand_tone = st.text_input("Specify your Tone/Style", "Professional")
 
-    # 6.4 Keywords
-    primary_kw_str = st.text_input("Primary Keywords (comma-separated)")
-    secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)")
+    # Keywords
+    primary_kw_str = st.text_input("Primary Keywords (comma-separated)", "")
+    secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)", "")
 
     primary_keywords = [kw.strip() for kw in primary_kw_str.split(",") if kw.strip()]
     secondary_keywords = [kw.strip() for kw in secondary_kw_str.split(",") if kw.strip()]
 
-    # 6.5 Simple vs. Advanced
+    # Select mode
     mode = st.radio("Mode", ["Simple", "Advanced"], index=0)
 
-    # Copy the default field requirements so we can override them if needed
-    field_requirements = {}
-    for k, v in DEFAULT_FIELD_REQUIREMENTS.items():
-        field_requirements[k] = v.copy()
+    # Retrieve default structure for the chosen page type
+    default_structure = PAGE_DEFAULT_STRUCTURES.get(page_type, PAGE_DEFAULT_STRUCTURES["Other"])
+
+    # We'll copy so we can override in advanced mode
+    structure_for_page = []
+    for section in default_structure:
+        structure_for_page.append(section.copy())
 
     if mode == "Advanced":
         st.subheader("Advanced Field Constraints")
-        st.info("Adjust any or all constraints for each section below.")
+        st.info(f"Customize constraints for each section in the {page_type} page structure.")
 
-        # We'll iterate through every section and show relevant numeric inputs.
-        for section_key, info in field_requirements.items():
-            st.markdown(f"**{info.get('label', section_key)}**")
+        # Let user override
+        for section in structure_for_page:
+            key = section["key"]
+            label = section.get("label", key)
+            st.markdown(f"**{label}**")
 
-            if "min_chars" in info:
-                info["min_chars"] = st.number_input(
-                    f"{info['label']} Min Characters",
+            if "min_chars" in section:
+                section["min_chars"] = st.number_input(
+                    f"{label} Min Characters",
                     min_value=1,
-                    value=info["min_chars"],
-                    key=f"{section_key}_min_chars"
+                    value=section["min_chars"],
+                    key=f"{key}_min_chars"
                 )
-            if "max_chars" in info:
-                info["max_chars"] = st.number_input(
-                    f"{info['label']} Max Characters",
+            if "max_chars" in section:
+                section["max_chars"] = st.number_input(
+                    f"{label} Max Characters",
                     min_value=1,
-                    value=info["max_chars"],
-                    key=f"{section_key}_max_chars"
+                    value=section["max_chars"],
+                    key=f"{key}_max_chars"
                 )
-            if "min_words" in info:
-                info["min_words"] = st.number_input(
-                    f"{info['label']} Min Words",
+            if "min_words" in section:
+                section["min_words"] = st.number_input(
+                    f"{label} Min Words",
                     min_value=1,
-                    value=info["min_words"],
-                    key=f"{section_key}_min_words"
+                    value=section["min_words"],
+                    key=f"{key}_min_words"
                 )
-            if "max_words" in info:
-                info["max_words"] = st.number_input(
-                    f"{info['label']} Max Words",
+            if "max_words" in section:
+                section["max_words"] = st.number_input(
+                    f"{label} Max Words",
                     min_value=1,
-                    value=info["max_words"],
-                    key=f"{section_key}_max_words"
+                    value=section["max_words"],
+                    key=f"{key}_max_words"
                 )
-            if "min_sentences" in info:
-                info["min_sentences"] = st.number_input(
-                    f"{info['label']} Min Sentences",
+            if "min_sentences" in section:
+                section["min_sentences"] = st.number_input(
+                    f"{label} Min Sentences",
                     min_value=1,
-                    value=info["min_sentences"],
-                    key=f"{section_key}_min_sentences"
+                    value=section["min_sentences"],
+                    key=f"{key}_min_sentences"
                 )
-            if "max_sentences" in info:
-                info["max_sentences"] = st.number_input(
-                    f"{info['label']} Max Sentences",
+            if "max_sentences" in section:
+                section["max_sentences"] = st.number_input(
+                    f"{label} Max Sentences",
                     min_value=1,
-                    value=info["max_sentences"],
-                    key=f"{section_key}_max_sentences"
+                    value=section["max_sentences"],
+                    key=f"{key}_max_sentences"
                 )
 
             st.divider()
 
-    # 6.6 Button to Generate
     if st.button("Generate Content"):
+        # Build data object
         data = {
             "page_type": page_type,
-            "page_specific_info": page_specific_info,
             "location": location,
             "brand_tone": brand_tone,
             "primary_keywords": primary_keywords,
             "secondary_keywords": secondary_keywords,
-            "field_requirements": field_requirements
+            "page_specific_info": page_specific_info,
+            "structure": structure_for_page
         }
 
-        st.info("Generating your single cohesive page content. Please wait...")
+        st.info(f"Generating a cohesive {page_type} page. Please wait...")
         output_text = generate_cohesive_content(data)
 
-        if "Error generating" in output_text or "Error" in output_text:
+        if "Error generating" in output_text:
             st.error(output_text)
         else:
-            st.success("Content Generated Successfully!")
+            st.success("Content generated successfully!")
             st.write(output_text)
 
-            # 6.7 Flesch Reading Ease
-            flesch_score = calculate_flesch_reading_ease(output_text)
-            st.write(f"**Flesch Reading Ease Score**: {flesch_score}")
+            # Flesch Reading Ease
+            score = calculate_flesch_reading_ease(output_text)
+            st.write(f"**Flesch Reading Ease Score**: {score}")
 
             # Download button
             st.download_button(
