@@ -3,8 +3,8 @@ import openai
 import nltk
 
 # -----------------------------------------------------
-#  If you haven't downloaded NLTK tokenizers yet:
-#  Uncomment and run once
+# If you haven't downloaded NLTK tokenizers yet:
+# Uncomment and run once
 # -----------------------------------------------------
 # nltk.download('punkt')
 
@@ -106,7 +106,7 @@ DEFAULT_FIELD_REQUIREMENTS = {
 def build_homepage_prompt(data: dict) -> str:
     """
     Dynamically builds a prompt instructing the AI to generate
-    an article or homepage content with the user-specified constraints.
+    an article/homepage content with user-specified constraints.
     """
     field_reqs = data.get("field_requirements", DEFAULT_FIELD_REQUIREMENTS)
     
@@ -122,7 +122,7 @@ def build_homepage_prompt(data: dict) -> str:
         "character/word/sentence constraints where provided:\n\n"
     )
 
-    # Go in an order (for example, 1 to 18). Adjust the actual order to match your desired structure:
+    # Adjust the ordering or sections as needed:
     section_order = [
         "h1", "tagline", "intro_blurb", "h2_1", "body_1",
         "h2_2_services", "service_collection",
@@ -134,7 +134,7 @@ def build_homepage_prompt(data: dict) -> str:
     section_number = 1
     for section_key in section_order:
         if section_key not in field_reqs:
-            continue  # Skip if not defined
+            continue  # skip if not defined
         info = field_reqs[section_key]
         label = info.get("label", section_key)
 
@@ -183,18 +183,19 @@ def build_homepage_prompt(data: dict) -> str:
 
 # -----------------------------------------------------
 # 4. Generate Content with openai>=1.0.0 Interface
+#    => using openai.chat.completions.create(...)
 # -----------------------------------------------------
 def generate_custom_homepage_content(data: dict) -> str:
     """
-    Calls openai.ChatCompletion.create with the new interface (>=1.0.0).
+    Calls openai.chat.completions.create with the new interface (>=1.0.0).
     """
     prompt = build_homepage_prompt(data)
 
     try:
-        # For GPT-4, the model name is just "gpt-4".
-        # If you have access to GPT-4, you can use "gpt-4"; otherwise use "gpt-3.5-turbo", etc.
-        response = openai.ChatCompletion.create(
-            model="gpt-4",  # or "gpt-3.5-turbo"
+        # If you have GPT-4 access, you can use "gpt-4".
+        # Otherwise, "gpt-3.5-turbo" or another model you're allowed to use.
+        response = openai.chat.completions.create(
+            model="gpt-4",  # or "gpt-3.5-turbo", etc.
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
             temperature=0.7
@@ -244,7 +245,7 @@ def main():
     mode = st.radio("Mode", ["Simple", "Advanced"], index=0)
     st.write("Use **Simple** Mode for minimal inputs with default constraints, or **Advanced** to override all settings.")
 
-    # Basic inputs
+    # Basic keyword inputs
     primary_kw_str = st.text_input("Primary Keywords (comma-separated)", "")
     secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)", "")
 
@@ -314,6 +315,7 @@ def main():
 
             st.divider()  # a simple horizontal rule for visual separation
 
+    # Button to generate content
     if st.button("Generate Content"):
         # Build data dict
         data = {
@@ -325,7 +327,7 @@ def main():
         st.info("Generating content, please wait...")
         output_text = generate_custom_homepage_content(data)
 
-        if "Error generating" in output_text:
+        if "Error generating" in output_text or "Error" in output_text:
             st.error(output_text)
         else:
             st.success("Content Generated Successfully!")
