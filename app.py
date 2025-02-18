@@ -1,76 +1,79 @@
 import streamlit as st
 import openai
-import asyncio
 import nltk
 
-# -- If needed, download nltk data at runtime (uncomment if not already present) --
+# -----------------------------------------------------
+#  If you haven't downloaded NLTK tokenizers yet:
+#  Uncomment and run once
+# -----------------------------------------------------
 # nltk.download('punkt')
 
-# ----------------------------------------------------------------------------
-# 1. Set up your API key (assuming it's in Streamlit secrets)
-# ----------------------------------------------------------------------------
-openai_api_key = st.secrets["OPENAI_API_KEY"]
-openai.api_key = openai_api_key
+# -----------------------------------------------------
+# 1. Set your OpenAI API Key from Streamlit secrets
+# -----------------------------------------------------
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# ----------------------------------------------------------------------------
-# 2. Default Field Requirements Dictionary
-#    - Contains all the sections we want to generate for a homepage
-#    - Each section has default constraints (min/max chars, words, sentences, etc.)
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------
+# 2. Default Field Requirements:
+#    For each section, we store possible constraints:
+#    - min_chars, max_chars
+#    - min_words, max_words
+#    - min_sentences, max_sentences
+#    Adjust as needed for your article/homepage structure.
+# -----------------------------------------------------
 DEFAULT_FIELD_REQUIREMENTS = {
     "h1": {
+        "label": "H1 Title",
         "min_chars": 20,
-        "max_chars": 60,
-        "label": "H1 Title"
+        "max_chars": 60
     },
     "tagline": {
+        "label": "Tagline",
         "min_words": 6,
-        "max_words": 12,
-        "label": "Tagline (Short Phrase)"
+        "max_words": 12
     },
     "intro_blurb": {
+        "label": "Intro Blurb",
         "min_words": 15,
-        "max_words": 20,
-        "label": "Intro Blurb/Welcome"
+        "max_words": 20
     },
     "h2_1": {
+        "label": "H2-1 Title",
         "min_chars": 30,
-        "max_chars": 70,
-        "label": "H2-1 Title"
+        "max_chars": 70
     },
     "body_1": {
+        "label": "Body 1",
         "min_sentences": 3,
-        "max_sentences": 5,
-        "label": "Body 1"
+        "max_sentences": 5
     },
     "h2_2_services": {
+        "label": "H2-2 (Services)",
         "min_chars": 30,
-        "max_chars": 70,
-        "label": "H2-2 (Services)"
+        "max_chars": 70
     },
     "service_collection": {
-        "label": "Services Section",
-        "description": "A short list or paragraphs describing services."
+        "label": "Services Section"
     },
     "h2_3": {
+        "label": "H2-3 Title",
         "min_chars": 30,
-        "max_chars": 70,
-        "label": "H2-3 Title"
+        "max_chars": 70
     },
     "body_2": {
+        "label": "Body 2",
         "min_sentences": 3,
-        "max_sentences": 5,
-        "label": "Body 2"
+        "max_sentences": 5
     },
     "h2_4_about": {
+        "label": "H2-4 (About Us)",
         "min_chars": 30,
-        "max_chars": 70,
-        "label": "H2-4 (About Us)"
+        "max_chars": 70
     },
     "body_3": {
+        "label": "Body 3",
         "min_sentences": 3,
-        "max_sentences": 5,
-        "label": "Body 3"
+        "max_sentences": 5
     },
     "areas_we_serve": {
         "label": "Areas We Serve"
@@ -79,7 +82,7 @@ DEFAULT_FIELD_REQUIREMENTS = {
         "label": "Reviews Section"
     },
     "contact_form": {
-        "label": "Contact Form Placeholder"
+        "label": "Contact Form"
     },
     "nap": {
         "label": "Name, Address, Phone"
@@ -97,219 +100,246 @@ DEFAULT_FIELD_REQUIREMENTS = {
     }
 }
 
-# ----------------------------------------------------------------------------
-# 3. Building a Structured Prompt from the Requirements
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------
+# 3. Build the Prompt Dynamically Based on Requirements
+# -----------------------------------------------------
 def build_homepage_prompt(data: dict) -> str:
     """
-    Dynamically builds a prompt instructing the AI to generate 
-    homepage content according to the constraints in 'field_requirements'.
+    Dynamically builds a prompt instructing the AI to generate
+    an article or homepage content with the user-specified constraints.
     """
     field_reqs = data.get("field_requirements", DEFAULT_FIELD_REQUIREMENTS)
     
+    # Gather the user keywords
     primary_keywords = ', '.join(data.get('primary_keywords', []))
     secondary_keywords = ', '.join(data.get('secondary_keywords', []))
-    
+
     prompt = (
         "You are an advanced SEO copywriter.\n"
         f"Primary Keywords: {primary_keywords}\n"
         f"Secondary Keywords: {secondary_keywords}\n\n"
-        "Please create homepage content with these sections, following the indicated character/word/sentence constraints:\n\n"
+        "Please create homepage/article content with these sections, following the indicated "
+        "character/word/sentence constraints where provided:\n\n"
     )
+
+    # Go in an order (for example, 1 to 18). Adjust the actual order to match your desired structure:
+    section_order = [
+        "h1", "tagline", "intro_blurb", "h2_1", "body_1",
+        "h2_2_services", "service_collection",
+        "h2_3", "body_2", "h2_4_about", "body_3",
+        "areas_we_serve", "reviews", "contact_form",
+        "nap", "footer", "title_tag", "meta_description"
+    ]
     
-    #  -- H1 --
-    prompt += f"1. H1: {field_reqs['h1']['min_chars']}-{field_reqs['h1']['max_chars']} characters.\n"
-    #  -- Tagline --
-    prompt += f"2. Tagline: {field_reqs['tagline']['min_words']}-{field_reqs['tagline']['max_words']} words.\n"
-    #  -- Intro Blurb --
-    prompt += f"3. Intro Blurb: {field_reqs['intro_blurb']['min_words']}-{field_reqs['intro_blurb']['max_words']} words.\n"
-    #  -- H2-1 --
-    prompt += f"4. H2-1: {field_reqs['h2_1']['min_chars']}-{field_reqs['h2_1']['max_chars']} characters.\n"
-    #  -- Body 1 --
-    prompt += f"5. Body 1: {field_reqs['body_1']['min_sentences']}-{field_reqs['body_1']['max_sentences']} sentences.\n"
-    #  -- H2-2 (Services) --
-    prompt += f"6. H2-2 (Services): {field_reqs['h2_2_services']['min_chars']}-{field_reqs['h2_2_services']['max_chars']} characters.\n"
-    #  -- Service Collection --
-    prompt += "7. Services Section (list or short paragraphs describing services).\n"
-    #  -- H2-3 --
-    prompt += f"8. H2-3: {field_reqs['h2_3']['min_chars']}-{field_reqs['h2_3']['max_chars']} characters.\n"
-    #  -- Body 2 --
-    prompt += f"9. Body 2: {field_reqs['body_2']['min_sentences']}-{field_reqs['body_2']['max_sentences']} sentences.\n"
-    #  -- H2-4 (About) --
-    prompt += f"10. H2-4 (About Us): {field_reqs['h2_4_about']['min_chars']}-{field_reqs['h2_4_about']['max_chars']} characters.\n"
-    #  -- Body 3 --
-    prompt += f"11. Body 3: {field_reqs['body_3']['min_sentences']}-{field_reqs['body_3']['max_sentences']} sentences.\n"
-    #  -- Areas We Serve --
-    prompt += "12. Areas We Serve.\n"
-    #  -- Reviews --
-    prompt += "13. Reviews Section.\n"
-    #  -- Contact Form --
-    prompt += "14. Contact Form Placeholder.\n"
-    #  -- NAP --
-    prompt += "15. Name, Address, Phone (NAP).\n"
-    #  -- Footer --
-    prompt += "16. Footer Section.\n"
-    #  -- Title Tag --
-    if "title_tag" in field_reqs:
-        max_tt = field_reqs["title_tag"].get("max_chars", 60)
-        prompt += f"17. Title Tag: up to {max_tt} characters.\n"
-    else:
-        prompt += "17. Title Tag.\n"
-    #  -- Meta Description --
-    if "meta_description" in field_reqs:
-        max_md = field_reqs["meta_description"].get("max_chars", 160)
-        prompt += f"18. Meta Description: up to {max_md} characters.\n"
-    else:
-        prompt += "18. Meta Description.\n"
-    
-    prompt += "\nAdditional SEO Requirements:\n"
-    prompt += "- Insert alt text placeholders for images (e.g., alt='...').\n"
-    prompt += "- Insert at least one internal link placeholder (e.g., [Internal Link: /page]).\n"
-    prompt += "- Insert at least one external link placeholder (e.g., [External Link: https://example.com]).\n"
-    prompt += "- Provide placeholders for structured data if relevant.\n"
-    prompt += "- Maintain a professional tone.\n"
-    prompt += "- Use keywords naturally.\n\n"
-    prompt += "Please produce the final output labeled by each section in order.\n"
-    
+    section_number = 1
+    for section_key in section_order:
+        if section_key not in field_reqs:
+            continue  # Skip if not defined
+        info = field_reqs[section_key]
+        label = info.get("label", section_key)
+
+        # Prepare a short line with constraints
+        constraints_str = ""
+
+        # Char constraints
+        if "min_chars" in info and "max_chars" in info:
+            constraints_str += f"{info['min_chars']}-{info['max_chars']} chars"
+        elif "max_chars" in info:  # only max
+            constraints_str += f"up to {info['max_chars']} chars"
+
+        # Word constraints
+        if "min_words" in info and "max_words" in info:
+            if constraints_str:
+                constraints_str += ", "
+            constraints_str += f"{info['min_words']}-{info['max_words']} words"
+
+        # Sentence constraints
+        if "min_sentences" in info and "max_sentences" in info:
+            if constraints_str:
+                constraints_str += ", "
+            constraints_str += f"{info['min_sentences']}-{info['max_sentences']} sentences"
+
+        # Construct the prompt line
+        if constraints_str:
+            prompt += f"{section_number}. {label}: {constraints_str}\n"
+        else:
+            prompt += f"{section_number}. {label}.\n"
+
+        section_number += 1
+
+    # Additional instructions for SEO
+    prompt += (
+        "\nAdditional SEO Requirements:\n"
+        "- Insert alt text placeholders for images (e.g., alt='...').\n"
+        "- Insert at least one internal link placeholder (e.g., [Internal Link: /some-page]).\n"
+        "- Insert at least one external link placeholder (e.g., [External Link: https://example.com]).\n"
+        "- Provide placeholders for structured data if relevant.\n"
+        "- Maintain a professional or relevant tone.\n"
+        "- Use keywords naturally.\n\n"
+        "Please produce the final output labeled by each section in order.\n"
+    )
+
     return prompt
 
-# ----------------------------------------------------------------------------
-# 4. Async Function to Call OpenAI with the Prompt
-# ----------------------------------------------------------------------------
-async def async_generate_custom_homepage_content(data: dict) -> str:
-    homepage_prompt = build_homepage_prompt(data)
+# -----------------------------------------------------
+# 4. Generate Content with openai>=1.0.0 Interface
+# -----------------------------------------------------
+def generate_custom_homepage_content(data: dict) -> str:
+    """
+    Calls openai.ChatCompletion.create with the new interface (>=1.0.0).
+    """
+    prompt = build_homepage_prompt(data)
+
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a highly skilled SEO copywriter."},
-                {"role": "user", "content": homepage_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=2000
+        # For GPT-4, the model name is just "gpt-4".
+        # If you have access to GPT-4, you can use "gpt-4"; otherwise use "gpt-3.5-turbo", etc.
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # or "gpt-3.5-turbo"
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.7
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error generating homepage content: {e}"
+        return f"Error generating homepage content:\n\n{e}"
 
-def generate_custom_homepage_content(data: dict) -> str:
-    """
-    Synchronous wrapper for the asynchronous content generator.
-    """
-    return asyncio.run(async_generate_custom_homepage_content(data))
-
-# ----------------------------------------------------------------------------
-# 5. Flesch Reading Ease Function
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------
+# 5. Flesch Reading Ease Calculation
+# -----------------------------------------------------
 def calculate_flesch_reading_ease(text: str) -> float:
     """
-    Calculate the Flesch Reading Ease score for a given text.
-    Higher score => easier to read. Typical range is 0-100+.
+    Rough calculation of the Flesch Reading Ease score (0-100+).
     """
-    # Tokenize
     sentences = nltk.sent_tokenize(text)
     words = nltk.word_tokenize(text)
-    
-    # Count syllables (approximation: each vowel cluster counts as a syllable)
+
     vowels = "aeiouAEIOU"
     syllable_count = 0
     for word in words:
         word_syllables = 0
         for i, char in enumerate(word):
             if char in vowels:
-                # Avoid double-counting vowel clusters
-                if i == 0 or word[i-1] not in vowels:
+                # avoid double counting consecutive vowels
+                if i == 0 or word[i - 1] not in vowels:
                     word_syllables += 1
         if word_syllables == 0:
             word_syllables = 1
         syllable_count += word_syllables
-    
-    # Avoid division by zero
-    if len(sentences) == 0 or len(words) == 0:
+
+    if len(words) == 0 or len(sentences) == 0:
         return 0.0
-    
+
     words_per_sentence = len(words) / len(sentences)
     syllables_per_word = syllable_count / len(words)
-    
-    # Flesch Reading Ease formula
+
     score = 206.835 - (1.015 * words_per_sentence) - (84.6 * syllables_per_word)
     return round(score, 2)
 
-# ----------------------------------------------------------------------------
-# 6. Streamlit Main App with Simple/Advanced Mode
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------
+# 6. Streamlit Main App
+# -----------------------------------------------------
 def main():
-    st.title("Highly Customizable SEO Homepage Generator")
+    st.title("Highly Customizable SEO Content Generator")
 
-    # Let user pick a mode
     mode = st.radio("Mode", ["Simple", "Advanced"], index=0)
+    st.write("Use **Simple** Mode for minimal inputs with default constraints, or **Advanced** to override all settings.")
 
-    # Common inputs
+    # Basic inputs
     primary_kw_str = st.text_input("Primary Keywords (comma-separated)", "")
     secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)", "")
 
-    # Convert them to lists
+    # Convert to lists
     primary_keywords = [kw.strip() for kw in primary_kw_str.split(",") if kw.strip()]
     secondary_keywords = [kw.strip() for kw in secondary_kw_str.split(",") if kw.strip()]
 
-    # Make a copy of default field requirements
-    field_requirements = {key: val.copy() for key, val in DEFAULT_FIELD_REQUIREMENTS.items()}
+    # Copy the default field requirements so we can override them if needed
+    field_requirements = {}
+    for k, v in DEFAULT_FIELD_REQUIREMENTS.items():
+        field_requirements[k] = v.copy()
 
     if mode == "Advanced":
         st.subheader("Advanced Field Constraints")
+        st.info("Adjust any or all constraints for each section below.")
 
-        # Example: let user override H1 char limits
-        field_requirements["h1"]["min_chars"] = st.number_input(
-            "H1 Min Characters",
-            min_value=1, max_value=100,
-            value=field_requirements["h1"]["min_chars"]
-        )
-        field_requirements["h1"]["max_chars"] = st.number_input(
-            "H1 Max Characters",
-            min_value=1, max_value=200,
-            value=field_requirements["h1"]["max_chars"]
-        )
+        # We'll iterate through every section and show relevant numeric inputs.
+        for section_key, info in field_requirements.items():
+            st.markdown(f"**{info.get('label', section_key)}**")
+            # Check if we have 'min_chars', 'max_chars'
+            if "min_chars" in info:
+                info["min_chars"] = st.number_input(
+                    f"{info['label']} Min Characters",
+                    min_value=1,
+                    value=info["min_chars"],
+                    key=f"{section_key}_min_chars"
+                )
+            if "max_chars" in info:
+                info["max_chars"] = st.number_input(
+                    f"{info['label']} Max Characters",
+                    min_value=1,
+                    value=info["max_chars"],
+                    key=f"{section_key}_max_chars"
+                )
 
-        # Example: let user override Tagline word limits
-        field_requirements["tagline"]["min_words"] = st.number_input(
-            "Tagline Min Words",
-            min_value=1, max_value=50,
-            value=field_requirements["tagline"]["min_words"]
-        )
-        field_requirements["tagline"]["max_words"] = st.number_input(
-            "Tagline Max Words",
-            min_value=1, max_value=100,
-            value=field_requirements["tagline"]["max_words"]
-        )
+            # Check if we have 'min_words', 'max_words'
+            if "min_words" in info:
+                info["min_words"] = st.number_input(
+                    f"{info['label']} Min Words",
+                    min_value=1,
+                    value=info["min_words"],
+                    key=f"{section_key}_min_words"
+                )
+            if "max_words" in info:
+                info["max_words"] = st.number_input(
+                    f"{info['label']} Max Words",
+                    min_value=1,
+                    value=info["max_words"],
+                    key=f"{section_key}_max_words"
+                )
 
-        # Similarly, you can add more overrides for H2, body sections, etc.
-        # This is just an example to illustrate the approach.
+            # Check if we have 'min_sentences', 'max_sentences'
+            if "min_sentences" in info:
+                info["min_sentences"] = st.number_input(
+                    f"{info['label']} Min Sentences",
+                    min_value=1,
+                    value=info["min_sentences"],
+                    key=f"{section_key}_min_sentences"
+                )
+            if "max_sentences" in info:
+                info["max_sentences"] = st.number_input(
+                    f"{info['label']} Max Sentences",
+                    min_value=1,
+                    value=info["max_sentences"],
+                    key=f"{section_key}_max_sentences"
+                )
 
-    if st.button("Generate Homepage Content"):
+            st.divider()  # a simple horizontal rule for visual separation
+
+    if st.button("Generate Content"):
+        # Build data dict
         data = {
             "primary_keywords": primary_keywords,
             "secondary_keywords": secondary_keywords,
             "field_requirements": field_requirements
         }
 
-        st.info("Generating content...")
+        st.info("Generating content, please wait...")
         output_text = generate_custom_homepage_content(data)
 
-        if output_text.startswith("Error"):
+        if "Error generating" in output_text:
             st.error(output_text)
         else:
-            st.success("Content generated!")
+            st.success("Content Generated Successfully!")
             st.write(output_text)
 
-            # Calculate Flesch Reading Ease
-            score = calculate_flesch_reading_ease(output_text)
-            st.write(f"**Flesch Reading Ease Score**: {score}")
+            # Show the Flesch score for readability
+            flesch_score = calculate_flesch_reading_ease(output_text)
+            st.write(f"**Flesch Reading Ease Score**: {flesch_score}")
 
-            # Download button
+            # Provide a download button
             st.download_button(
-                label="Download Homepage Content",
+                label="Download Content",
                 data=output_text,
-                file_name="homepage_content.txt",
+                file_name="custom_homepage_content.txt",
                 mime="text/plain"
             )
 
