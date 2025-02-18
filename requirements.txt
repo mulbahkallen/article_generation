@@ -6,3 +6,4 @@ requests
 beautifulsoup4
 openai
 nest_asyncio
+nltk
