@@ -3,8 +3,8 @@ import openai
 import nltk
 
 # Uncomment once to download the resources you need:
-# nltk.download('punkt')
-# nltk.download('punkt_tab')
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
 ###########################################################
 # 1. OpenAI Configuration
