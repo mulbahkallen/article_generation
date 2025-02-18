@@ -2,95 +2,243 @@ import streamlit as st
 import openai
 import nltk
 
-# If you haven't already downloaded punkt:
+# If you haven't downloaded the tokenizer data yet, uncomment below once:
 # nltk.download('punkt')
 
-#######################################
-# 1. Configure OpenAI
-#######################################
-openai.api_key = st.secrets["OPENAI_API_KEY"]  # or however you store your key
+###########################################################
+# 1. OpenAI Configuration
+###########################################################
+openai.api_key = st.secrets["OPENAI_API_KEY"]  # Adjust to your secure storage method
 
-#######################################
-# 2. Define Different Page Structures
-#######################################
-# Each page type has its own list of sections with default constraints.
-# You can expand or modify these as needed.
+###########################################################
+# 2. Global Guidelines / Constraints
+###########################################################
+# We'll incorporate these into the prompt so the model
+# respects the best practices for title tags, meta descriptions, H1, etc.
+
+GLOBAL_GUIDELINES = {
+    "title_tag": {
+        "recommendation": "50-60 characters",
+        "note": "Ensures title is not truncated in SERPs."
+    },
+    "meta_description": {
+        "recommendation": "140-160 characters",
+        "note": "Should be compelling, often includes location/phone."
+    },
+    "h1": {
+        "recommendation": "up to 60-70 characters",
+        "note": "Clear main topic, includes target keyword."
+    },
+    "paragraphs": "2-4 sentences, under 20 words each sentence if possible.",
+    "keyword_density": "Aim for 1-2% for target keyword; do not stuff.",
+    "alt_text": "Use descriptive alt text with local keyword if relevant.",
+    "structured_data": "Use LocalBusiness/MedicalClinic or relevant schema.",
+    "EAT": "Include credentials, disclaimers, authoritative citations if medical."
+}
+
+###########################################################
+# 3. Page-Type Specific Default Structures
+###########################################################
+# We incorporate the new detailed guidelines for each page type.
+
 PAGE_DEFAULT_STRUCTURES = {
     "Home": [
-        {"key": "h1", "label": "H1 Title", "min_chars": 20, "max_chars": 60},
-        {"key": "tagline", "label": "Tagline", "min_words": 6, "max_words": 12},
-        {"key": "intro_blurb", "label": "Intro/Welcome Blurb", "min_words": 15, "max_words": 25},
-        {"key": "h2_services", "label": "H2 (Services)", "min_chars": 30, "max_chars": 70},
-        {"key": "services_body", "label": "Services Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "h2_about", "label": "H2 (About)", "min_chars": 30, "max_chars": 70},
-        {"key": "about_body", "label": "About Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "reviews", "label": "Reviews Section"},
-        {"key": "areas_we_serve", "label": "Areas We Serve"},
-        {"key": "call_to_action", "label": "CTA/Conversion Prompt"},
-        {"key": "nap", "label": "Name, Address, Phone"},
-        {"key": "footer", "label": "Footer Section"},
-        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
-        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
-    ],
-    "Service": [
-        {"key": "h1_service", "label": "H1 (Service Name)", "min_chars": 20, "max_chars": 60},
-        {"key": "service_intro", "label": "Service Intro", "min_sentences": 2, "max_sentences": 3},
-        {"key": "h2_benefits", "label": "H2 (Key Benefits)", "min_chars": 30, "max_chars": 70},
-        {"key": "benefits_body", "label": "Benefits Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "h2_pricing", "label": "H2 (Pricing/Process)", "min_chars": 30, "max_chars": 70},
-        {"key": "pricing_body", "label": "Pricing/Process Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "call_to_action", "label": "CTA/Conversion Prompt"},
-        {"key": "nap", "label": "Name, Address, Phone"},
-        {"key": "footer", "label": "Footer Section"},
-        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
-        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60,
+            "note": "e.g. 'Family Medicine in Austin | Austin Family Clinic'"
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160,
+            "note": "Should reference location if possible."
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70,
+            "note": "Clear main topic, includes target keyword."
+        },
+        {
+            "key": "core_content",
+            "label": "Core Content (Hero/Intro, Services Teaser, Local Trust Signals, CTA)",
+            "min_words": 500,
+            "max_words": 800,  # 500–800 words recommended
+            "note": "Include short paragraphs, references to location, highlight services."
+        },
+        {
+            "key": "footer",
+            "label": "Footer + NAP",
+            "note": "Include consistent Name, Address, Phone."
+        }
     ],
     "About Us": [
-        {"key": "h1_about", "label": "H1 (About Us Title)", "min_chars": 20, "max_chars": 60},
-        {"key": "about_intro", "label": "About Intro", "min_sentences": 2, "max_sentences": 3},
-        {"key": "h2_history", "label": "H2 (History)", "min_chars": 30, "max_chars": 70},
-        {"key": "history_body", "label": "History Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "h2_mission", "label": "H2 (Mission/Vision)", "min_chars": 30, "max_chars": 70},
-        {"key": "mission_body", "label": "Mission/Vision Body", "min_sentences": 2, "max_sentences": 4},
-        {"key": "team_intro", "label": "Team/People Intro", "min_sentences": 2, "max_sentences": 4},
-        {"key": "call_to_action", "label": "CTA"},
-        {"key": "nap", "label": "Name, Address, Phone"},
-        {"key": "footer", "label": "Footer Section"},
-        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
-        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60,
+            "note": "e.g. 'About Our Team | Austin Family Clinic'"
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160,
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70,
+            "note": "Example: 'Meet the Austin Family Clinic Team'"
+        },
+        {
+            "key": "about_core",
+            "label": "Core Content (History, Mission, Bios, Community Involvement)",
+            "min_words": 400,
+            "max_words": 700,
+            "note": "Cover team credentials, local references, E-A-T signals."
+        },
+        {
+            "key": "footer",
+            "label": "Footer + NAP",
+        }
+    ],
+    "Service": [
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60,
+            "note": "Format: '[Service] in [City] | [Practice Name]'"
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70,
+            "note": "Example: 'Comprehensive Dermatology Care in Austin'"
+        },
+        {
+            "key": "service_core",
+            "label": "Core Content (Service Overview, Conditions, Local Tie-Ins, CTA)",
+            "min_words": 600,
+            "max_words": 900,
+            "note": "Describe procedures, staff expertise, local context."
+        },
+        {
+            "key": "footer",
+            "label": "Footer + NAP",
+        }
     ],
     "Blog/Article": [
-        {"key": "h1_blog", "label": "H1 (Article Title)", "min_chars": 20, "max_chars": 70},
-        {"key": "intro_paragraph", "label": "Intro Paragraph", "min_sentences": 2, "max_sentences": 3},
-        {"key": "h2_subtopic1", "label": "H2 (Subtopic 1)", "min_chars": 30, "max_chars": 70},
-        {"key": "body_subtopic1", "label": "Body Subtopic 1", "min_sentences": 2, "max_sentences": 5},
-        {"key": "h2_subtopic2", "label": "H2 (Subtopic 2)", "min_chars": 30, "max_chars": 70},
-        {"key": "body_subtopic2", "label": "Body Subtopic 2", "min_sentences": 2, "max_sentences": 5},
-        {"key": "conclusion", "label": "Conclusion", "min_sentences": 2, "max_sentences": 3},
-        {"key": "footer", "label": "Footer (Optional)"},
-        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
-        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60,
+            "note": "e.g. 'Managing Allergies in Austin | Austin Family Clinic'"
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70,
+            "note": "Example: 'Seasonal Allergy Tips for Austin Residents'"
+        },
+        {
+            "key": "blog_body",
+            "label": "Body Content (Intro, Local Impact, Expert Advice, CTA)",
+            "min_words": 800,
+            "max_words": 1200,
+            "note": "Include disclaimers, E-A-T elements, references to local environment."
+        },
+        {
+            "key": "footer",
+            "label": "Footer",
+        }
+    ],
+    "Contact": [
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60,
+            "note": "e.g. 'Contact Us | Austin Family Clinic'"
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70,
+            "note": "Example: 'Get in Touch with Austin Family Clinic'"
+        },
+        {
+            "key": "contact_body",
+            "label": "Core Content (Location, Hours, Directions, CTA)",
+            "min_words": 200,
+            "max_words": 400,
+            "note": "Focus on how to reach or find the clinic, mention location & phone."
+        },
+        {
+            "key": "footer",
+            "label": "Footer + NAP",
+        }
     ],
     "Other": [
-        {"key": "h1_other", "label": "H1 Title", "min_chars": 20, "max_chars": 60},
-        {"key": "intro_other", "label": "Intro Section", "min_sentences": 2, "max_sentences": 3},
-        {"key": "body_other", "label": "Main Body", "min_sentences": 2, "max_sentences": 5},
-        {"key": "call_to_action", "label": "CTA (Optional)"},
-        {"key": "nap", "label": "Name, Address, Phone"},
-        {"key": "footer", "label": "Footer Section"},
-        {"key": "title_tag", "label": "SEO Title Tag", "max_chars": 60},
-        {"key": "meta_description", "label": "Meta Description", "max_chars": 160},
+        {
+            "key": "title_tag",
+            "label": "Title Tag",
+            "min_chars": 50,
+            "max_chars": 60
+        },
+        {
+            "key": "meta_description",
+            "label": "Meta Description",
+            "min_chars": 140,
+            "max_chars": 160
+        },
+        {
+            "key": "h1",
+            "label": "H1",
+            "max_chars": 70
+        },
+        {
+            "key": "other_body",
+            "label": "Main Body Content",
+            "min_words": 300,
+            "max_words": 800
+        },
+        {
+            "key": "footer",
+            "label": "Footer + NAP",
+        }
     ]
 }
 
-#######################################
-# 3. Flesch Reading Ease Calculation
-#######################################
+###########################################################
+# 4. Flesch Reading Ease Function
+###########################################################
 def calculate_flesch_reading_ease(text: str) -> float:
-    """
-    Approximate Flesch Reading Ease score (0–100+).
-    Higher = more readable.
-    """
     sentences = nltk.sent_tokenize(text)
     words = nltk.word_tokenize(text)
 
@@ -116,212 +264,219 @@ def calculate_flesch_reading_ease(text: str) -> float:
     score = 206.835 - (1.015 * words_per_sentence) - (84.6 * syllables_per_word)
     return round(score, 2)
 
-#######################################
-# 4. Build a Single Cohesive Prompt
-#######################################
+###########################################################
+# 5. Build Prompt for a Single Cohesive Output
+###########################################################
 def build_cohesive_prompt(data: dict) -> str:
     """
-    Builds a single prompt for a unified piece of content,
-    reflecting the page's unique structure.
+    Incorporates global guidelines, page-specific structure,
+    and user-supplied details into a single prompt.
     """
     page_type = data.get("page_type", "Home")
     location = data.get("location", "")
     brand_tone = data.get("brand_tone", "Professional")
+    primary_keywords = ", ".join(data.get("primary_keywords", []))
+    secondary_keywords = ", ".join(data.get("secondary_keywords", []))
+    page_specific_info = data.get("page_specific_info", {})
+    structure = data.get("structure", [])
 
-    primary_keywords = ', '.join(data.get('primary_keywords', []))
-    secondary_keywords = ', '.join(data.get('secondary_keywords', []))
-
-    page_specific_info = data.get('page_specific_info', {})
-    structure = data.get("structure", [])  # the list of sections for this page type
-
-    prompt = f"""You are an advanced SEO copywriter with local SEO expertise.
-
-Page Type: {page_type}
-Location/Region: {location}
-Tone/Style: {brand_tone}
-Primary Keywords: {primary_keywords}
-Secondary Keywords: {secondary_keywords}
-
-Additional Page-Specific Details:
-{page_specific_info}
-
-Below is the structure for this {page_type} page with recommended constraints. 
-Please produce a single cohesive piece of text that uses headings (H1, H2, H3, etc.) but is not separated 
-into disjoint sections. The final output should read like a well-structured page.
-
-Incorporate:
-- Local SEO references to the location
-- Natural usage of primary/secondary keywords
-- Alt text placeholders for images (e.g., (alt="..."))
-- At least one internal link placeholder ([Internal Link: /some-page]) 
-- At least one external link placeholder ([External Link: https://example.com])
-- Potential calls to action or conversion prompts
-- If relevant, mention structured data or schema
-
-Here is the list of sections (with constraints) that should guide your writing:
+    # Global guidelines summary
+    global_instructions = f"""
+Global SEO/Medical Guidelines:
+- Title Tag: {GLOBAL_GUIDELINES['title_tag']['recommendation']} 
+- Meta Description: {GLOBAL_GUIDELINES['meta_description']['recommendation']}
+- H1: {GLOBAL_GUIDELINES['h1']['recommendation']}
+- Paragraphs: {GLOBAL_GUIDELINES['paragraphs']}
+- Keyword Density: {GLOBAL_GUIDELINES['keyword_density']}
+- Alt Text: {GLOBAL_GUIDELINES['alt_text']}
+- Structured Data: {GLOBAL_GUIDELINES['structured_data']}
+- E-A-T: {GLOBAL_GUIDELINES['EAT']}
 """
-    for section in structure:
-        label = section.get("label", "Unnamed Section")
-        constraints = []
 
-        if "min_chars" in section and "max_chars" in section:
-            constraints.append(f"{section['min_chars']}-{section['max_chars']} chars")
-        elif "max_chars" in section:
-            constraints.append(f"up to {section['max_chars']} chars")
+    prompt = (
+        "You are an advanced SEO copywriter with strong local SEO and medical content awareness.\n\n"
+        f"Page Type: {page_type}\n"
+        f"Location: {location}\n"
+        f"Tone/Style: {brand_tone}\n"
+        f"Primary Keywords: {primary_keywords}\n"
+        f"Secondary Keywords: {secondary_keywords}\n\n"
+        "Additional Page-Specific Details:\n"
+        f"{page_specific_info}\n\n"
+        f"{global_instructions}\n"
+        "Below is the recommended structure and constraints for this page type:\n"
+    )
 
-        if "min_words" in section and "max_words" in section:
-            constraints.append(f"{section['min_words']}-{section['max_words']} words")
+    # Summarize the sections for this page
+    for sec in structure:
+        label = sec.get("label", "Unnamed Section")
+        constraints_str = []
+        if "min_chars" in sec and "max_chars" in sec:
+            constraints_str.append(f"{sec['min_chars']}-{sec['max_chars']} chars")
+        elif "max_chars" in sec:
+            constraints_str.append(f"up to {sec['max_chars']} chars")
 
-        if "min_sentences" in section and "max_sentences" in section:
-            constraints.append(f"{section['min_sentences']}-{section['max_sentences']} sentences")
+        if "min_words" in sec and "max_words" in sec:
+            constraints_str.append(f"{sec['min_words']}-{sec['max_words']} words")
 
-        if constraints:
-            prompt += f"- {label}: {', '.join(constraints)}\n"
+        if "min_sentences" in sec and "max_sentences" in sec:
+            constraints_str.append(f"{sec['min_sentences']}-{sec['max_sentences']} sentences")
+
+        if constraints_str:
+            joined = ", ".join(constraints_str)
+            prompt += f"- {label}: {joined}\n"
         else:
             prompt += f"- {label}\n"
+        note = sec.get("note", None)
+        if note:
+            prompt += f"  (Note: {note})\n"
 
     prompt += """
-Please present all content in one cohesive flow, using the headings in a natural progression. 
-Ensure it can stand alone as a full page.
+Please generate a **single cohesive piece of content** with appropriate headings (H1, H2, H3, etc.) 
+but do **not** break it into disjoint sections for each bullet. Instead, unify them into a flowing 
+page. Follow these guidelines:
 
-Now, generate the final text accordingly.
+1. Respect the recommended word/character limits where possible.
+2. Use local SEO references naturally (mention city/region).
+3. Use alt text placeholders for images, e.g. (alt="doctor with patient in Austin").
+4. Insert at least one internal link placeholder, e.g., [Internal Link: /services].
+5. Insert at least one external link placeholder, e.g., [External Link: https://example.com].
+6. Include a short call-to-action referencing phone number or scheduling.
+7. If relevant, mention how structured data or E-A-T disclaimers can be integrated.
+
+Focus on clarity, readability (short paragraphs, short sentences), and medical credibility if appropriate.
+Output should appear as a final draft of a webpage.
+
+Now please create the final cohesive content accordingly.
 """
+
     return prompt
 
-#######################################
-# 5. Generate the Content Using openai>=1.0.0
-#######################################
+###########################################################
+# 6. Generate Content via openai>=1.0.0
+###########################################################
 def generate_cohesive_content(data: dict) -> str:
     prompt = build_cohesive_prompt(data)
     try:
-        # If you have GPT-4 access, you can specify model="gpt-4"
+        # If you have GPT-4, you can specify model="gpt-4"
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2500,
+            max_tokens=3000,
             temperature=0.7
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"Error generating content:\n\n{e}"
 
-#######################################
-# 6. Streamlit App
-#######################################
+###########################################################
+# 7. Streamlit Main App
+###########################################################
 def main():
-    st.title("Local SEO Content Generator (Multi-Page Type)")
+    st.title("Local SEO Content Generator (Multi-Page Medical Edition)")
 
-    # Page type selection
+    # 1) Page Type Selection
     page_type = st.selectbox(
         "Select Page Type",
-        ["Home", "Service", "About Us", "Blog/Article", "Other"],
-        index=0
+        ["Home", "About Us", "Service", "Blog/Article", "Contact", "Other"]
     )
 
-    # Page-specific extra questions
+    # 2) Page-specific inputs
     page_specific_info = {}
+    st.subheader(f"{page_type} Page Additional Details")
     if page_type == "Home":
-        st.subheader("Home Page Details")
-        page_specific_info["brand_name"] = st.text_input("Brand Name (optional)")
-        page_specific_info["main_products_services"] = st.text_input("Main Products/Services (optional)")
-        page_specific_info["home_highlights"] = st.text_area("Highlight Features or Unique Selling Points (optional)")
-    elif page_type == "Service":
-        st.subheader("Service Page Details")
-        page_specific_info["service_name"] = st.text_input("Service Name")
-        page_specific_info["service_key_points"] = st.text_area("Key Selling Points/USPs")
+        page_specific_info["hero_focus"] = st.text_input("What is the primary focus/USP on the homepage?")
+        page_specific_info["services_overview"] = st.text_area("Brief list or overview of top services offered:")
     elif page_type == "About Us":
-        st.subheader("About Us Page Details")
-        page_specific_info["company_history"] = st.text_area("Short Company History (optional)")
-        page_specific_info["mission_vision"] = st.text_area("Mission/Vision (optional)")
+        page_specific_info["founding_story"] = st.text_area("Any historical/founding notes:")
+        page_specific_info["team_highlights"] = st.text_input("Key staff credentials or unique achievements:")
+    elif page_type == "Service":
+        page_specific_info["service_name"] = st.text_input("Name of the service (e.g., Dermatology):")
+        page_specific_info["service_benefits"] = st.text_area("Key selling points or benefits of this service:")
     elif page_type == "Blog/Article":
-        st.subheader("Blog/Article Page Details")
-        page_specific_info["blog_topic"] = st.text_input("Topic/Title of Article")
-        page_specific_info["target_audience"] = st.text_input("Target Audience or Niche")
+        page_specific_info["topic"] = st.text_input("Topic of the article (e.g., 'Managing Allergies in Austin'):")
+        page_specific_info["author_credential"] = st.text_input("Name & credential of author (e.g., Dr. Smith, MD):")
+    elif page_type == "Contact":
+        page_specific_info["forms_of_contact"] = st.text_area("Any special instructions about phone, email, form, etc.:")
     else:
-        st.subheader("Custom/Other Page Details")
-        page_specific_info["description"] = st.text_area("Brief Description of This Page")
+        page_specific_info["notes"] = st.text_area("Describe the purpose or content of this custom page:")
 
-    # Common inputs for local SEO
-    location = st.text_input("Location/Region (e.g., City, State)", "")
+    # 3) Location / Tone
+    st.subheader("Local & Branding Info")
+    location = st.text_input("Location (City, State, Region)", "Austin, TX")
     brand_tone = st.selectbox("Brand Tone/Style", ["Professional", "Friendly", "Casual", "Technical", "Persuasive", "Other"])
     if brand_tone == "Other":
-        brand_tone = st.text_input("Specify your Tone/Style", "Professional")
+        brand_tone = st.text_input("Specify brand tone:", "Professional")
 
-    # Keywords
-    primary_kw_str = st.text_input("Primary Keywords (comma-separated)", "")
-    secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)", "")
-
+    # 4) Keywords
+    st.subheader("Keywords")
+    primary_kw_str = st.text_input("Primary Keywords (comma-separated)")
+    secondary_kw_str = st.text_input("Secondary Keywords (comma-separated)")
     primary_keywords = [kw.strip() for kw in primary_kw_str.split(",") if kw.strip()]
     secondary_keywords = [kw.strip() for kw in secondary_kw_str.split(",") if kw.strip()]
 
-    # Select mode
-    mode = st.radio("Mode", ["Simple", "Advanced"], index=0)
+    # 5) Simple vs. Advanced Mode
+    st.subheader("Mode")
+    mode = st.radio("Choose Mode", ["Simple (Default Constraints)", "Advanced (Override)"], index=0)
 
-    # Retrieve default structure for the chosen page type
+    # Load default structure for this page type
     default_structure = PAGE_DEFAULT_STRUCTURES.get(page_type, PAGE_DEFAULT_STRUCTURES["Other"])
-
-    # We'll copy so we can override in advanced mode
+    # Make a copy so we can override if advanced
     structure_for_page = []
-    for section in default_structure:
-        structure_for_page.append(section.copy())
+    for sec in default_structure:
+        structure_for_page.append(sec.copy())
 
-    if mode == "Advanced":
-        st.subheader("Advanced Field Constraints")
-        st.info(f"Customize constraints for each section in the {page_type} page structure.")
-
-        # Let user override
-        for section in structure_for_page:
-            key = section["key"]
-            label = section.get("label", key)
+    # 6) Advanced Overrides
+    if mode == "Advanced (Override)":
+        st.subheader("Advanced Field Overrides")
+        for sec in structure_for_page:
+            key = sec["key"]
+            label = sec["label"]
             st.markdown(f"**{label}**")
 
-            if "min_chars" in section:
-                section["min_chars"] = st.number_input(
+            # If we see min_chars / max_chars
+            if "min_chars" in sec:
+                sec["min_chars"] = st.number_input(
                     f"{label} Min Characters",
-                    min_value=1,
-                    value=section["min_chars"],
+                    min_value=1, value=sec["min_chars"],
                     key=f"{key}_min_chars"
                 )
-            if "max_chars" in section:
-                section["max_chars"] = st.number_input(
+            if "max_chars" in sec:
+                sec["max_chars"] = st.number_input(
                     f"{label} Max Characters",
-                    min_value=1,
-                    value=section["max_chars"],
+                    min_value=1, value=sec["max_chars"],
                     key=f"{key}_max_chars"
                 )
-            if "min_words" in section:
-                section["min_words"] = st.number_input(
+            # If we see min_words / max_words
+            if "min_words" in sec:
+                sec["min_words"] = st.number_input(
                     f"{label} Min Words",
-                    min_value=1,
-                    value=section["min_words"],
+                    min_value=1, value=sec["min_words"],
                     key=f"{key}_min_words"
                 )
-            if "max_words" in section:
-                section["max_words"] = st.number_input(
+            if "max_words" in sec:
+                sec["max_words"] = st.number_input(
                     f"{label} Max Words",
-                    min_value=1,
-                    value=section["max_words"],
+                    min_value=1, value=sec["max_words"],
                     key=f"{key}_max_words"
                 )
-            if "min_sentences" in section:
-                section["min_sentences"] = st.number_input(
+            # If we see min_sentences / max_sentences
+            if "min_sentences" in sec:
+                sec["min_sentences"] = st.number_input(
                     f"{label} Min Sentences",
-                    min_value=1,
-                    value=section["min_sentences"],
+                    min_value=1, value=sec["min_sentences"],
                     key=f"{key}_min_sentences"
                 )
-            if "max_sentences" in section:
-                section["max_sentences"] = st.number_input(
+            if "max_sentences" in sec:
+                sec["max_sentences"] = st.number_input(
                     f"{label} Max Sentences",
-                    min_value=1,
-                    value=section["max_sentences"],
+                    min_value=1, value=sec["max_sentences"],
                     key=f"{key}_max_sentences"
                 )
 
-            st.divider()
+            st.write("---")
 
+    # 7) Generate Button
     if st.button("Generate Content"):
-        # Build data object
         data = {
             "page_type": page_type,
             "location": location,
@@ -332,7 +487,7 @@ def main():
             "structure": structure_for_page
         }
 
-        st.info(f"Generating a cohesive {page_type} page. Please wait...")
+        st.info("Generating your cohesive page content with local SEO guidelines. Please wait...")
         output_text = generate_cohesive_content(data)
 
         if "Error generating" in output_text:
@@ -341,15 +496,15 @@ def main():
             st.success("Content generated successfully!")
             st.write(output_text)
 
-            # Flesch Reading Ease
-            score = calculate_flesch_reading_ease(output_text)
-            st.write(f"**Flesch Reading Ease Score**: {score}")
+            # 8) Flesch Score
+            flesch_score = calculate_flesch_reading_ease(output_text)
+            st.write(f"**Flesch Reading Ease Score**: {flesch_score}")
 
-            # Download button
+            # Download
             st.download_button(
-                label="Download Content",
+                "Download Content as TXT",
                 data=output_text,
-                file_name="seo_content.txt",
+                file_name=f"{page_type}_content.txt",
                 mime="text/plain"
             )
 
