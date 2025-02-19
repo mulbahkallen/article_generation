@@ -24,21 +24,18 @@ def generate_content_with_chatgpt(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 2000,
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-4"
 ) -> str:
     """
     Calls OpenAI's ChatCompletion endpoint with provided prompts and returns the generated text.
     """
     openai.api_key = api_key
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens
+            messages=[{"role": "system", "content": system_prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature
         )
         content = response.choices[0].message["content"]
         return content.strip()
