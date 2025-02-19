@@ -1,6 +1,7 @@
 import streamlit as st
 import openai
 import json
+import time  # <-- import time for sleep/backoff
 from datetime import datetime
 from typing import List, Dict
 
@@ -24,24 +25,44 @@ def generate_content_with_chatgpt(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 2000,
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-3.5-turbo",
+    max_retries: int = 3
 ) -> str:
     """
     Calls OpenAI's ChatCompletion endpoint with provided prompts and returns the generated text.
+    Implements a retry mechanism for rate-limit errors (429).
     """
     openai.api_key = api_key
-    try:
-        response = openai.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": system_prompt}],
-            max_tokens=max_tokens,
-            temperature=temperature
-        )
-        content = response.choices[0].message["content"]
-        return content.strip()
-    except Exception as e:
-        st.error(f"OpenAI API Error: {e}")
-        return ""
+
+    for attempt in range(max_retries):
+        try:
+            response = openai.ChatCompletion.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            content = response.choices[0].message["content"]
+            return content.strip()
+
+        except openai.error.RateLimitError as e:
+            # Exponential backoff
+            wait_time = 2 ** attempt
+            st.warning(f"Rate limit error (attempt {attempt+1}/{max_retries}). Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+
+        except Exception as e:
+            # Catch other API-related or general errors
+            st.error(f"OpenAI API Error (attempt {attempt+1}/{max_retries}): {e}")
+            # If it's the last retry, return empty or raise
+            if attempt == max_retries - 1:
+                return ""
+
+    # If all retries are exhausted without a return:
+    return ""
 
 
 def generate_prompt(
@@ -103,6 +124,7 @@ def generate_meta_brief(api_key: str, page_type: str, keywords: List[str]) -> st
         f"Create a short content brief for a {page_type} page that targets these keywords: {', '.join(keywords)}. "
         "Include target audience, main goal, key points to cover, and any relevant local SEO elements."
     )
+    # Note: We reuse the generate_content_with_chatgpt function (which now has retry logic)
     return generate_content_with_chatgpt(api_key, system_msg, user_msg)
 
 # =============================
@@ -409,11 +431,11 @@ def main():
             st.session_state.full_site_configs = {}
 
         # Create a form for each page type dynamically
-        for page_type in selected_pages:
-            with st.expander(f"Settings for {page_type}", expanded=False):
+        for pg_type in selected_pages:
+            with st.expander(f"Settings for {pg_type}", expanded=False):
                 # Check if we already have stored config
-                if page_type not in st.session_state.full_site_configs:
-                    st.session_state.full_site_configs[page_type] = {
+                if pg_type not in st.session_state.full_site_configs:
+                    st.session_state.full_site_configs[pg_type] = {
                         "word_count": 600,
                         "keywords": [],
                         "tone_of_voice": "Professional",
@@ -423,30 +445,30 @@ def main():
                         "custom_template": ""
                     }
 
-                config = st.session_state.full_site_configs[page_type]
-                config["word_count"] = st.slider(f"{page_type}: Word Count", 200, 3000, config["word_count"], step=100)
-                kws_input = st.text_input(f"{page_type}: Primary Keywords (comma-separated)",
+                config = st.session_state.full_site_configs[pg_type]
+                config["word_count"] = st.slider(f"{pg_type}: Word Count", 200, 3000, config["word_count"], step=100)
+                kws_input = st.text_input(f"{pg_type}: Primary Keywords (comma-separated)",
                                           value=", ".join(config["keywords"]))
                 config["keywords"] = [k.strip() for k in kws_input.split(",") if k.strip()]
 
                 col1, col2 = st.columns(2)
                 with col1:
                     config["tone_of_voice"] = st.selectbox(
-                        f"{page_type}: Tone of Voice",
+                        f"{pg_type}: Tone of Voice",
                         ["Professional", "Casual", "Persuasive", "Technical", "Friendly", "Authoritative"],
                         index=0 if config["tone_of_voice"] == "Professional" else 1
                     )
-                    config["meta_required"] = st.checkbox(f"{page_type}: Generate Meta?", value=config["meta_required"])
+                    config["meta_required"] = st.checkbox(f"{pg_type}: Generate Meta?", value=config["meta_required"])
                 with col2:
                     config["writing_style"] = st.selectbox(
-                        f"{page_type}: Writing Style",
+                        f"{pg_type}: Writing Style",
                         ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"],
                         index=0 if config["writing_style"] == "SEO-focused" else 1
                     )
-                    config["schema_toggle"] = st.checkbox(f"{page_type}: Include Schema?", value=config["schema_toggle"])
+                    config["schema_toggle"] = st.checkbox(f"{pg_type}: Include Schema?", value=config["schema_toggle"])
                 
                 config["custom_template"] = st.text_area(
-                    f"{page_type}: Custom Template (Optional)",
+                    f"{pg_type}: Custom Template (Optional)",
                     value=config["custom_template"]
                 )
 
@@ -470,7 +492,7 @@ def main():
                             meta_required=cfg["meta_required"],
                             structured_data=cfg["schema_toggle"],
                             custom_template=cfg["custom_template"],
-                            variation_num=1  # typically 1 for each page here
+                            variation_num=1
                         )
                         site_gen_text = generate_content_with_chatgpt(
                             api_key=user_api_key,
