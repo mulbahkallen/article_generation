@@ -8,10 +8,6 @@ from typing import List, Dict
 # =        CONFIG AREA        =
 # =============================
 
-# You can set up your own OPENAI_API_KEY in Streamlit Secrets or prompt the user to input it.
-# For example, you can do: openai.api_key = st.secrets["OPENAI_API_KEY"]
-# or ask the user to enter it in the UI.
-
 # Uncomment this if you want to read from st.secrets:
 # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
@@ -32,7 +28,7 @@ def generate_content_with_chatgpt(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 2000,
-    model: str = "gpt-4"
+    model: str = "gpt-3.5-turbo"
 ) -> str:
     """
     Calls OpenAI's ChatCompletion endpoint with provided prompts and returns the generated text.
@@ -117,13 +113,12 @@ def generate_meta_brief(api_key: str, page_type: str, keywords: List[str]) -> st
     )
     return generate_content_with_chatgpt(api_key, system_msg, user_msg)
 
-
 # =============================
 # =       STREAMLIT APP       =
 # =============================
 
 def main():
-    st.title("AI-Powered Content Generator for Medical/Healthcare Websites (Generic)")
+    st.title("AI-Powered Content Generator (Interactive Bulk Mode)")
 
     # 1. API Key Input
     st.sidebar.header("OpenAI API")
@@ -132,8 +127,8 @@ def main():
         st.warning("Please enter your OpenAI API key to proceed.")
         st.stop()
 
-    # 2. Basic Controls
-    st.sidebar.header("Content Settings")
+    # 2. Basic Controls (Single Page)
+    st.sidebar.header("Single Page Content Settings")
     page_type = st.sidebar.selectbox(
         "Page Type",
         ["Homepage", "Service Page", "Blog Post", "About Us Page", "Product Page", "Other"]
@@ -164,20 +159,13 @@ def main():
     schema_toggle = st.sidebar.checkbox("Include Structured Data Suggestions?", value=True)
     
     # 3. Advanced / Additional
-    st.sidebar.header("Advanced Options")
+    st.sidebar.header("Advanced Options (Single Page)")
     number_of_variations = st.sidebar.number_input("Number of Content Variations", min_value=1, max_value=5, value=1)
     custom_template = st.sidebar.text_area(
         "Custom Template (Optional)",
-        help="Define your own structure. E.g. Intro, 3 subheadings, CTA, etc."
+        help="Define your own structure. E.g. Intro, subheadings, CTA, etc."
     )
     temperature = st.sidebar.slider("Creativity (temperature)", 0.0, 1.0, 0.7, 0.1)
-    
-    # 4. Bulk Generation
-    st.sidebar.header("Bulk Generation")
-    bulk_pages_data = st.sidebar.text_area(
-        "Bulk Pages (JSON List)",
-        help="Enter a JSON list of objects, each with keys like: page_type, word_count, keywords, tone, style, etc."
-    )
 
     st.write("---")
     st.subheader("1. Generate Content Brief (Optional)")
@@ -190,7 +178,7 @@ def main():
             st.write(brief)
 
     st.write("---")
-    st.subheader("2. Generate Page Content")
+    st.subheader("2. Generate Page Content (Single Page)")
     
     # Prepare placeholders to display the generated content
     content_placeholders = []
@@ -221,14 +209,10 @@ def main():
                 max_tokens=3000  # adjust as needed
             )
             
-            # If multiple variations are requested, we can attempt to parse them
-            # ChatGPT typically won't provide them in strict JSON, but we can do a naive split by headings, for example.
-            # Alternatively, instruct ChatGPT to output a clear separator like "=== Variation X ===".
-            # For simplicity, here's a naive approach:
+            # Handle multiple variations if requested
             if number_of_variations > 1:
                 # Attempt splitting by "Variation" or some delimiter
                 variations = generated_text.split("Variation")
-                # The first chunk might be the introduction text; let's skip if it's not relevant
                 cleaned_variations = [v for v in variations if len(v.strip()) > 10]
                 
                 if len(cleaned_variations) < number_of_variations:
@@ -246,29 +230,19 @@ def main():
 
     st.write("---")
     st.subheader("3. Refine / Edit Content")
-    # For simplicity, let's let the user pick which variation they want to refine
     refine_variation_index = st.number_input(
         "Select Variation to Refine (if multiple)",
         min_value=1, max_value=number_of_variations, value=1
     )
     refine_input = st.text_area(
         "Refinement Instructions",
-        help="Provide instructions to improve or adjust the generated content. For example: 'Make it more concise', 'Add a specific CTA', etc."
+        help="Provide instructions to improve or adjust the generated content. E.g., 'Make it more concise', 'Add a specific CTA', etc."
     )
     if st.button("Refine"):
         with st.spinner("Refining..."):
-            refinement_prompt = (
-                "Please refine the following content based on these instructions:\n\n"
-                "Content:\n"
-            )
-            # We need the actual content from the placeholder
-            # In practice, we'd store the content in a session state so we can retrieve it easily
-            # For demonstration, let's assume the user copied the content into the text area or we store it in st.session_state
-            # Here, we'll do a naive approach:
-            st.warning("In a real app, you'd retrieve the Variation content from session state or a hidden input. For now, you might copy-paste the Variation text below.")
-            # This is a placeholder approach:
-            st.write("Refinement not fully implemented because we lack the original text in session state.")
-
+            # In a real app, we’d store the content from Variation X in session_state for re-prompting.
+            st.warning("Refinement demo placeholder. Retrieve the content from Variation in session_state to refine it.")
+    
     st.write("---")
     st.subheader("4. Export Results")
 
@@ -278,13 +252,8 @@ def main():
         min_value=1, max_value=number_of_variations, value=1
     )
     export_format = st.selectbox("Export Format", ["HTML", "JSON"])
-
     if st.button("Export"):
-        # Again, we'd retrieve the content from the actual stored variable or session state.
-        # For demonstration, let's mock:
-        content_to_export = "No content found. In a real scenario, retrieve the generated text from memory."
-
-        # Create a unique filename
+        content_to_export = "No content found. In a real scenario, retrieve the generated text from memory/session."
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"exported_content_{export_format.lower()}_{timestamp}"
 
@@ -296,7 +265,6 @@ def main():
                 mime="text/html"
             )
         else:
-            # JSON
             data_json = {"content": content_to_export}
             st.download_button(
                 "Download as JSON",
@@ -305,59 +273,102 @@ def main():
                 mime="application/json"
             )
 
+    # ------------------------------
+    # INTERACTIVE BULK GENERATION
+    # ------------------------------
     st.write("---")
-    st.subheader("5. Bulk Generation")
-    st.markdown("Use the JSON input in the sidebar to generate multiple pages at once.")
+    st.subheader("5. Build a List of Pages for Bulk Generation")
 
-    if st.button("Process Bulk"):
-        if not bulk_pages_data.strip():
-            st.warning("No bulk pages data provided.")
+    if "page_specs" not in st.session_state:
+        st.session_state.page_specs = []
+
+    with st.expander("Add a New Page Specification"):
+        with st.form("add_page_spec_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                b_page_type = st.selectbox("Page Type", 
+                                        ["Homepage", "Service Page", "Blog Post", "About Us Page", "Product Page", "Other"])
+                b_word_count = st.slider("Word Count", 200, 3000, 800, step=100)
+                b_meta_required = st.checkbox("Generate Meta Title & Description?", value=True)
+                b_schema_toggle = st.checkbox("Include Structured Data Suggestions?", value=True)
+            with col2:
+                b_keywords_input = st.text_input("Primary Keywords (comma-separated)", value="")
+                b_tone_of_voice = st.selectbox("Tone of Voice",
+                                            ["Professional", "Casual", "Persuasive", "Technical", "Friendly", "Authoritative"])
+                b_writing_style = st.selectbox("Writing Style",
+                                            ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"])
+                b_custom_template = st.text_area("Custom Template (Optional)")
+
+            submitted = st.form_submit_button("Add Page Specification")
+            if submitted:
+                b_keywords_list = [kw.strip() for kw in b_keywords_input.split(",") if kw.strip()]
+                new_spec = {
+                    "page_type": b_page_type,
+                    "word_count": b_word_count,
+                    "keywords": b_keywords_list,
+                    "tone_of_voice": b_tone_of_voice,
+                    "writing_style": b_writing_style,
+                    "meta_required": b_meta_required,
+                    "schema_toggle": b_schema_toggle,
+                    "custom_template": b_custom_template
+                }
+                st.session_state.page_specs.append(new_spec)
+                st.success(f"Added a new {b_page_type} spec!")
+
+    # Display current page specs
+    if st.session_state.page_specs:
+        st.write("### Current Page Specifications for Bulk Generation:")
+        for idx, spec in enumerate(st.session_state.page_specs):
+            st.markdown(f"**Page {idx+1}**: `{spec['page_type']}` - ~{spec['word_count']} words")
+            st.write(f"Keywords: {spec['keywords']}")
+            st.write(f"Tone: {spec['tone_of_voice']} | Style: {spec['writing_style']}")
+            st.write(f"Meta Required: {spec['meta_required']} | Schema: {spec['schema_toggle']}")
+            if spec['custom_template']:
+                st.write(f"**Custom Template**: {spec['custom_template'][:60]}... (truncated)")
+            remove_btn = st.button(f"Remove Page {idx+1}", key=f"remove_{idx}")
+            if remove_btn:
+                st.session_state.page_specs.pop(idx)
+                st.experimental_rerun()
+    else:
+        st.info("No page specifications added yet. Expand above to add multiple pages.")
+
+    st.write("---")
+    st.subheader("6. Generate All Bulk Pages")
+    bulk_temp = st.slider("Creativity (temperature) for Bulk Generation", 0.0, 1.0, 0.7, 0.1)
+
+    if st.button("Generate All Bulk Pages"):
+        if not st.session_state.page_specs:
+            st.warning("No page specifications to process. Please add at least one.")
         else:
-            try:
-                parsed_data = json.loads(bulk_pages_data)
-                # Expecting a list of objects like:
-                # [
-                #   {
-                #     "page_type": "Service Page",
-                #     "word_count": 700,
-                #     "keywords": ["urgent care", "emergency"],
-                #     "tone_of_voice": "Professional",
-                #     "writing_style": "SEO-focused",
-                #     "meta_required": True,
-                #     "schema_toggle": True
-                #   },
-                #   ...
-                # ]
-                for idx, item in enumerate(parsed_data):
-                    st.markdown(f"### Bulk Item {idx+1}")
-                    p_type = item.get("page_type", "Homepage")
-                    w_count = item.get("word_count", 600)
-                    kws = item.get("keywords", [])
-                    tone = item.get("tone_of_voice", "Professional")
-                    style = item.get("writing_style", "SEO-focused")
-                    meta_req = item.get("meta_required", True)
-                    schema_req = item.get("schema_toggle", True)
-                    
+            st.write("## Bulk Generation Results")
+            for idx, spec in enumerate(st.session_state.page_specs):
+                with st.spinner(f"Generating Page {idx+1}: {spec['page_type']}..."):
                     user_prompt = generate_prompt(
-                        page_type=p_type,
-                        word_count=w_count,
-                        keywords=kws,
-                        tone_of_voice=tone,
-                        writing_style=style,
-                        meta_required=meta_req,
-                        structured_data=schema_req
+                        page_type=spec["page_type"],
+                        word_count=spec["word_count"],
+                        keywords=spec["keywords"],
+                        tone_of_voice=spec["tone_of_voice"],
+                        writing_style=spec["writing_style"],
+                        meta_required=spec["meta_required"],
+                        structured_data=spec["schema_toggle"],
+                        custom_template=spec["custom_template"]
                     )
                     bulk_generated_text = generate_content_with_chatgpt(
                         api_key=user_api_key,
                         system_prompt="You are an AI assistant specialized in writing SEO-friendly content.",
                         user_prompt=user_prompt,
-                        temperature=0.7,
-                        max_tokens=2000
+                        temperature=bulk_temp,
+                        max_tokens=3000
                     )
+                    st.markdown(f"### Page {idx+1} Output ({spec['page_type']})")
                     st.write(bulk_generated_text)
                     st.write("---")
-            except json.JSONDecodeError as e:
-                st.error("Invalid JSON format for bulk pages.")
+
+    st.write("---")
+    st.subheader("7. Clear All Specs")
+    if st.button("Reset Page Specifications"):
+        st.session_state.page_specs = []
+        st.success("All page specifications have been cleared.")
 
 if __name__ == "__main__":
     main()
