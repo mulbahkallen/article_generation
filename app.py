@@ -24,7 +24,7 @@ def generate_content_with_chatgpt(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 2000,
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-4"
 ) -> str:
     """
     Calls OpenAI's ChatCompletion endpoint with provided prompts and returns the generated text.
