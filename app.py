@@ -1,13 +1,22 @@
 import streamlit as st
 import openai
 import json
-import time  # <-- import time for sleep/backoff
+import time
 from datetime import datetime
 from typing import List, Dict
 
-# =============================
-# =        CONFIG AREA        =
-# =============================
+# Attempt to import the new exception classes; if not found, fallback to a generic exception.
+try:
+    from openai.error import OpenAIError
+except ImportError:
+    OpenAIError = Exception
+
+# If RateLimitError isn't found, we can define it or handle all in OpenAIError
+try:
+    from openai.error import RateLimitError
+except ImportError:
+    class RateLimitError(OpenAIError):
+        pass
 
 st.set_page_config(
     page_title="AI-Powered Content Generator",
@@ -29,14 +38,17 @@ def generate_content_with_chatgpt(
     max_retries: int = 3
 ) -> str:
     """
-    Calls OpenAI's ChatCompletion endpoint with provided prompts and returns the generated text.
-    Implements a retry mechanism for rate-limit errors (429).
+    Calls the openai.chat.completions.create endpoint with provided prompts.
+    Uses exponential backoff for rate-limit errors (429).
+    Compatible with openai>=1.0.0.
     """
+
     openai.api_key = api_key
 
     for attempt in range(max_retries):
         try:
-            response = openai.ChatCompletion.create(
+            # NEW method for openai>=1.0.0:
+            response = openai.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -45,23 +57,24 @@ def generate_content_with_chatgpt(
                 temperature=temperature,
                 max_tokens=max_tokens
             )
+            # Extract the content
             content = response.choices[0].message["content"]
             return content.strip()
 
-        except openai.error.RateLimitError as e:
-            # Exponential backoff
+        except RateLimitError as e:
+            # This handles 429 errors if they are rate-limiting (not insufficient quota).
             wait_time = 2 ** attempt
-            st.warning(f"Rate limit error (attempt {attempt+1}/{max_retries}). Retrying in {wait_time} seconds...")
+            st.warning(f"Rate limit error (attempt {attempt+1}/{max_retries}). Retrying in {wait_time}s...")
             time.sleep(wait_time)
 
-        except Exception as e:
-            # Catch other API-related or general errors
+        except OpenAIError as e:
+            # Could be an 'insufficient_quota' or other error.
             st.error(f"OpenAI API Error (attempt {attempt+1}/{max_retries}): {e}")
-            # If it's the last retry, return empty or raise
+            # If it’s the final attempt, return an empty string or raise.
             if attempt == max_retries - 1:
                 return ""
 
-    # If all retries are exhausted without a return:
+    # If all retries were exhausted
     return ""
 
 
@@ -103,7 +116,6 @@ def generate_prompt(
     # Variation note:
     variation_text = f"Generate {variation_num} variations of the content.\n" if variation_num > 1 else ""
     
-    # Combine everything
     user_prompt = (
         f"Please produce a {page_type} with the following requirements:\n\n"
         f"{prompt_instructions}\n\n"
@@ -124,15 +136,15 @@ def generate_meta_brief(api_key: str, page_type: str, keywords: List[str]) -> st
         f"Create a short content brief for a {page_type} page that targets these keywords: {', '.join(keywords)}. "
         "Include target audience, main goal, key points to cover, and any relevant local SEO elements."
     )
-    # Note: We reuse the generate_content_with_chatgpt function (which now has retry logic)
     return generate_content_with_chatgpt(api_key, system_msg, user_msg)
+
 
 # =============================
 # =       STREAMLIT APP       =
 # =============================
 
 def main():
-    st.title("AI-Powered Content Generator")
+    st.title("AI-Powered Content Generator (openai>=1.0.0)")
 
     # ---------------------------------
     #      GET OPENAI API KEY
@@ -152,18 +164,18 @@ def main():
         ["Single-Page Generation", "Bulk Generation", "Full Website Generation"]
     )
     
-    # Prepare session state for storing results or specs if needed
+    # Prepare session state for storing results or specs
     if "page_specs" not in st.session_state:
         st.session_state.page_specs = []
 
-    # ------------------------------------------
-    #        SINGLE-PAGE GENERATION MODE
-    # ------------------------------------------
+    # ===============================
+    #  SINGLE-PAGE GENERATION MODE
+    # ===============================
     if mode == "Single-Page Generation":
         st.subheader("Single-Page Content Generation")
         st.write(
-            "Use this section to generate content for a single page type "
-            "(e.g., a single blog post, a single service page, etc.)"
+            "Use this section to generate content for one page "
+            "(e.g., a single blog post, service page, etc.)"
         )
 
         # Basic Controls
@@ -302,17 +314,16 @@ def main():
                     mime="application/json"
                 )
 
-    # ------------------------------------------
-    #        BULK GENERATION MODE
-    # ------------------------------------------
+    # ===============================
+    #       BULK GENERATION MODE
+    # ===============================
     elif mode == "Bulk Generation":
         st.subheader("Bulk Generation (Multiple Pages)")
         st.write(
-            "Use this section to add multiple page specifications and generate all of them at once. "
-            "For example, multiple blog posts or multiple service pages."
+            "Add multiple page specs and generate them all at once. "
+            "e.g., multiple blog posts or service pages."
         )
 
-        # Add a new page specification
         with st.expander("Add a New Page Specification"):
             with st.form("add_page_spec_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
@@ -346,10 +357,9 @@ def main():
                     st.session_state.page_specs.append(new_spec)
                     st.success(f"Added a new {b_page_type} spec!")
 
-        # Display current page specs
-        st.write("### Current Page Specifications for Bulk Generation:")
+        st.write("### Current Page Specs for Bulk Generation:")
         if not st.session_state.page_specs:
-            st.info("No page specifications added yet. Use the 'Add a New Page Specification' expander above.")
+            st.info("No page specs added. Use 'Add a New Page Specification' above.")
         else:
             for idx, spec in enumerate(st.session_state.page_specs):
                 st.markdown(f"**Page {idx+1}**: `{spec['page_type']}` - ~{spec['word_count']} words")
@@ -358,6 +368,7 @@ def main():
                 st.write(f"Meta Required: {spec['meta_required']} | Schema: {spec['schema_toggle']}")
                 if spec['custom_template']:
                     st.write(f"**Custom Template**: {spec['custom_template'][:60]}... (truncated)")
+
                 remove_btn = st.button(f"Remove Page {idx+1}", key=f"remove_{idx}")
                 if remove_btn:
                     st.session_state.page_specs.pop(idx)
@@ -369,7 +380,7 @@ def main():
 
             if st.button("Generate All Pages"):
                 if not st.session_state.page_specs:
-                    st.warning("No page specifications to process.")
+                    st.warning("No page specs to process.")
                 else:
                     st.write("## Bulk Generation Results")
                     for idx, spec in enumerate(st.session_state.page_specs):
@@ -396,44 +407,37 @@ def main():
                             st.write("---")
 
             st.write("---")
-            st.subheader("Reset All Page Specifications")
+            st.subheader("Reset All Page Specs")
             if st.button("Reset Specs"):
                 st.session_state.page_specs = []
-                st.success("All page specifications have been cleared.")
+                st.success("All page specs cleared.")
 
-
-    # ------------------------------------------
-    #     FULL WEBSITE GENERATION MODE
-    # ------------------------------------------
+    # ==========================================
+    #  FULL WEBSITE GENERATION MODE
+    # ==========================================
     elif mode == "Full Website Generation":
         st.subheader("Full Website Generation")
         st.write(
-            "This mode is intended for generating all the core pages of a website—e.g., Home Page, About Us, "
-            "Service Pages, Blog posts, etc.—in one flow."
+            "Generate core pages of a site—Home, About, Services, Blog, etc.—in one flow."
         )
 
-        # Define default page types for a typical medical/healthcare site
         default_pages = ["Homepage", "About Us Page", "Service Page", "Blog Post", "Contact Page"]
         st.info(
-            "Below is a typical set of website pages. Specify your details, then generate them all at once."
+            "Below is a typical set of website pages. Specify details, then generate them all."
         )
 
-        # Let the user pick which pages to generate
         selected_pages = st.multiselect(
-            "Select the pages to generate in this full website process:",
+            "Select pages to generate:",
             default_pages,
             default=default_pages
         )
 
         st.write("Configure each selected page:")
-        # We can store a dictionary of page configs in session state
         if "full_site_configs" not in st.session_state:
             st.session_state.full_site_configs = {}
 
-        # Create a form for each page type dynamically
         for pg_type in selected_pages:
             with st.expander(f"Settings for {pg_type}", expanded=False):
-                # Check if we already have stored config
                 if pg_type not in st.session_state.full_site_configs:
                     st.session_state.full_site_configs[pg_type] = {
                         "word_count": 600,
@@ -477,7 +481,7 @@ def main():
         full_site_temp = st.slider("Creativity (temperature)", 0.0, 1.0, 0.7, 0.1)
         if st.button("Generate All Selected Pages"):
             if not selected_pages:
-                st.warning("Please select at least one page to generate.")
+                st.warning("Please select at least one page.")
             else:
                 st.write("## Full Website Generation Results")
                 for pg_type in selected_pages:
@@ -509,6 +513,7 @@ def main():
         if st.button("Reset Full Site Config"):
             st.session_state.full_site_configs = {}
             st.success("Full site configuration cleared.")
+
 
 if __name__ == "__main__":
     main()
