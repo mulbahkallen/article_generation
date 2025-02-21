@@ -301,9 +301,16 @@ def main():
             "Select Variation to Export",
             min_value=1, max_value=number_of_variations, value=1
         )
-        export_format = st.selectbox("Export Format", ["HTML", "JSON"])
+
+        # =========================
+        #  ADDED TEXT OPTION HERE
+        # =========================
+        export_format = st.selectbox("Export Format", ["HTML", "JSON", "Text"])
+
         if st.button("Export"):
+            # In a real scenario, you'd retrieve the chosen Variation's text from session state or a variable.
             content_to_export = "No content found. (In a real scenario, retrieve Variation text from session state.)"
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"exported_content_{export_format.lower()}_{timestamp}"
 
@@ -314,13 +321,20 @@ def main():
                     file_name=filename + ".html",
                     mime="text/html"
                 )
-            else:
+            elif export_format == "JSON":
                 data_json = {"content": content_to_export}
                 st.download_button(
                     "Download as JSON",
                     data=json.dumps(data_json, indent=2),
                     file_name=filename + ".json",
                     mime="application/json"
+                )
+            else:  # "Text" format
+                st.download_button(
+                    "Download as Text",
+                    data=content_to_export,
+                    file_name=filename + ".txt",
+                    mime="text/plain"
                 )
 
     # ------------------------------------------
@@ -529,6 +543,7 @@ def main():
         if st.button("Reset Full Site Config"):
             st.session_state.full_site_configs = {}
             st.success("Full site configuration cleared.")
+
 
 if __name__ == "__main__":
     main()
