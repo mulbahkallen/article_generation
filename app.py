@@ -396,7 +396,7 @@ def main():
                 remove_btn = st.button(f"Remove Page {idx+1}", key=f"remove_{idx}")
                 if remove_btn:
                     st.session_state.page_specs.pop(idx)
-                    st.experimental_rerun()
+                    #st.experimental_rerun()
 
             st.write("---")
             st.subheader("Generate All Bulk Pages")
