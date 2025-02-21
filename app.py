@@ -37,14 +37,14 @@ def generate_content_with_chatgpt(
     max_retries: int = 3
 ) -> str:
     """
-    Calls openai.chat.completions.create with a retry mechanism for rate-limit errors.
+    Calls openai.ChatCompletion.create with a retry mechanism for rate-limit errors.
     If 'insufficient_quota' is detected, shows a custom message about usage/plan and stops retrying.
     """
     openai.api_key = api_key
 
     for attempt in range(max_retries):
         try:
-            response = openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -53,11 +53,10 @@ def generate_content_with_chatgpt(
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            content = response.choices[0].message["content"]
+            content = response.choices[0].message.content  # <--- Updated here
             return content.strip()
 
         except RateLimitError as e:
-            # True rate-limit scenario (429) -> attempt exponential backoff
             wait_time = 2 ** attempt
             st.warning(
                 f"Rate limit error (attempt {attempt+1}/{max_retries}). "
@@ -66,25 +65,21 @@ def generate_content_with_chatgpt(
             time.sleep(wait_time)
 
         except OpenAIError as e:
-            # Could be 'insufficient_quota' or other error
             error_msg = str(e)
-            # Check if it's specifically insufficient quota
             if "insufficient_quota" in error_msg:
                 st.error(
-                    "**Insufficient quota**: It appears you have run out of credits or exceeded"
-                    " your current plan’s usage. Please review your plan and billing details at:\n"
+                    "**Insufficient quota**: It appears you have run out of credits or exceeded "
+                    "your current plan’s usage. Please review your plan and billing details at:\n"
                     "• [Usage Dashboard](https://platform.openai.com/account/usage)\n"
                     "• [Billing Overview](https://platform.openai.com/account/billing/overview)\n\n"
                     "You’ll need to upgrade or add credits before trying again."
                 )
-                # No point in retrying if it's insufficient quota, so break
                 return ""
             else:
                 st.error(f"OpenAI API Error (attempt {attempt+1}/{max_retries}): {error_msg}")
                 if attempt == max_retries - 1:
                     return ""
 
-    # If all retries exhausted
     return ""
 
 
