@@ -44,7 +44,7 @@ def generate_content_with_chatgpt(
 
     for attempt in range(max_retries):
         try:
-            response = openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -53,7 +53,7 @@ def generate_content_with_chatgpt(
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            content = response.choices[0].message.content  # <--- Updated here
+            content = response.choices[0].message.content
             return content.strip()
 
         except RateLimitError as e:
@@ -92,11 +92,17 @@ def generate_prompt(
     meta_required: bool,
     structured_data: bool,
     custom_template: str = "",
-    variation_num: int = 1
+    variation_num: int = 1,
+    # NEW: Additional arguments for local SEO and E-E-A-T
+    reinforce_eeat: bool = False,
+    include_citations: bool = False,
+    practice_location: str = "",
+    practice_name: str = ""
 ) -> str:
     """
     Constructs a user prompt to feed into ChatGPT based on user inputs.
     """
+
     base_instructions = [
         f"Page Type: {page_type}",
         f"Desired Word Count: ~{word_count} words",
@@ -106,9 +112,27 @@ def generate_prompt(
         "Include meta title and meta description." if meta_required else "No meta info needed.",
         "Include structured data markup suggestions." if structured_data else "No structured data suggestions needed."
     ]
-    
+
+    # NEW: Conditionals to handle E-E-A-T, citations, local SEO
+    if reinforce_eeat:
+        base_instructions.append(
+            "Demonstrate strong E-E-A-T principles: provide expertise, authority, and trustworthiness in the content."
+        )
+    if include_citations:
+        base_instructions.append(
+            "Include references or citations to reputable sources (such as NIH, CDC, or other .gov/.edu sites) where appropriate."
+        )
+    if practice_location:
+        base_instructions.append(
+            f"Emphasize local SEO elements for the location: {practice_location}."
+        )
+    if practice_name:
+        base_instructions.append(
+            f"Reference or highlight the practice name: {practice_name}."
+        )
+
     prompt_instructions = "\n".join(base_instructions)
-    
+
     # If the user has provided a custom template, incorporate it:
     if custom_template.strip():
         custom_section = (
@@ -172,6 +196,10 @@ def main():
     if "page_specs" not in st.session_state:
         st.session_state.page_specs = []
 
+    # NEW: We'll store generated variations for refining
+    if "generated_variations" not in st.session_state:
+        st.session_state.generated_variations = []
+
     # ------------------------------------------
     #        SINGLE-PAGE GENERATION MODE
     # ------------------------------------------
@@ -181,6 +209,13 @@ def main():
             "Use this section to generate content for a single page type "
             "(e.g., a single blog post, a single service page, etc.)"
         )
+
+        # NEW: Advanced settings expander
+        with st.expander("Advanced SEO & Local Settings", expanded=False):
+            reinforce_eeat = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
+            include_citations = st.checkbox("Include References/Citations?", value=False)
+            practice_location = st.text_input("Practice Location (City, State)", value="")
+            practice_name = st.text_input("Practice/Doctor Name", value="")
 
         # Basic Controls
         page_type = st.selectbox(
@@ -236,7 +271,7 @@ def main():
         content_placeholders = []
         for i in range(number_of_variations):
             content_placeholders.append(st.empty())
-        
+
         if st.button("Generate Content"):
             with st.spinner("Generating content..."):
                 # Build the user prompt
@@ -249,12 +284,20 @@ def main():
                     meta_required=meta_toggle,
                     structured_data=schema_toggle,
                     custom_template=custom_template,
-                    variation_num=number_of_variations
+                    variation_num=number_of_variations,
+                    # NEW ARGS for advanced settings
+                    reinforce_eeat=reinforce_eeat,
+                    include_citations=include_citations,
+                    practice_location=practice_location,
+                    practice_name=practice_name
                 )
                 
                 generated_text = generate_content_with_chatgpt(
                     api_key=user_api_key,
-                    system_prompt="You are an AI assistant specialized in writing SEO-friendly, medically oriented website content.",
+                    system_prompt=(
+                        "You are an AI assistant specialized in writing SEO-friendly, medically oriented website content. "
+                        "Adhere to Google's E-E-A-T guidelines and ensure factual accuracy."
+                    ),
                     user_prompt=user_prompt,
                     temperature=temperature,
                     max_tokens=3000
@@ -270,6 +313,8 @@ def main():
                 else:
                     cleaned_variations = [generated_text]
                     
+                st.session_state.generated_variations = cleaned_variations  # Store for refinement
+
                 for i, placeholder in enumerate(content_placeholders):
                     if i < len(cleaned_variations):
                         placeholder.markdown(f"**Variation {i+1}**\n\n" + cleaned_variations[i])
@@ -288,7 +333,32 @@ def main():
         )
         if st.button("Refine"):
             with st.spinner("Refining..."):
-                st.warning("Refinement demo placeholder. Retrieve & re-prompt with Variation content in a real app.")
+                # Pull the variation from session state
+                var_index = refine_variation_index - 1
+                if var_index >= len(st.session_state.generated_variations):
+                    st.warning("No content to refine. Please generate content first.")
+                else:
+                    content_to_refine = st.session_state.generated_variations[var_index]
+                    refine_prompt = (
+                        "Refine the following content based on these instructions.\n\n"
+                        f"Original Content:\n{content_to_refine}\n\n"
+                        f"Instructions:\n{refine_input}\n"
+                        "Ensure the content remains SEO-friendly and medically appropriate."
+                    )
+                    refined_result = generate_content_with_chatgpt(
+                        api_key=user_api_key,
+                        system_prompt=(
+                            "You are an AI assistant specialized in refining SEO-friendly, medically oriented text. "
+                            "Focus on clarity, accuracy, and E-E-A-T principles."
+                        ),
+                        user_prompt=refine_prompt,
+                        temperature=temperature,
+                        max_tokens=3000
+                    )
+                    # Update the stored variation with the refined text
+                    st.session_state.generated_variations[var_index] = refined_result
+                    st.success("Refined content updated.")
+                    st.write(refined_result)
 
         st.write("---")
         st.subheader("Export Results")
@@ -297,14 +367,15 @@ def main():
             min_value=1, max_value=number_of_variations, value=1
         )
 
-        # =========================
-        #  ADDED TEXT OPTION HERE
-        # =========================
         export_format = st.selectbox("Export Format", ["HTML", "JSON", "Text"])
 
         if st.button("Export"):
-            # In a real scenario, you'd retrieve the chosen Variation's text from session state or a variable.
-            content_to_export = "No content found. (In a real scenario, retrieve Variation text from session state.)"
+            # Retrieve the chosen Variation's text
+            var_idx = export_variation_index - 1
+            if var_idx >= len(st.session_state.generated_variations):
+                st.warning("No variation found. Please generate content first.")
+                return
+            content_to_export = st.session_state.generated_variations[var_idx]
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"exported_content_{export_format.lower()}_{timestamp}"
@@ -360,6 +431,12 @@ def main():
                         ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"])
                     b_custom_template = st.text_area("Custom Template (Optional)")
 
+                # NEW: advanced toggles for each page spec
+                reinforce_eeat_bulk = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
+                include_citations_bulk = st.checkbox("Include References/Citations?", value=False)
+                practice_location_bulk = st.text_input("Practice Location (City, State)", value="")
+                practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
+
                 submitted = st.form_submit_button("Add Page Specification")
                 if submitted:
                     b_keywords_list = [kw.strip() for kw in b_keywords_input.split(",") if kw.strip()]
@@ -371,7 +448,11 @@ def main():
                         "writing_style": b_writing_style,
                         "meta_required": b_meta_required,
                         "schema_toggle": b_schema_toggle,
-                        "custom_template": b_custom_template
+                        "custom_template": b_custom_template,
+                        "reinforce_eeat": reinforce_eeat_bulk,      # NEW
+                        "include_citations": include_citations_bulk, # NEW
+                        "practice_location": practice_location_bulk, # NEW
+                        "practice_name": practice_name_bulk          # NEW
                     }
                     st.session_state.page_specs.append(new_spec)
                     st.success(f"Added a new {b_page_type} spec!")
@@ -386,12 +467,22 @@ def main():
                 st.write(f"Keywords: {spec['keywords']}")
                 st.write(f"Tone: {spec['tone_of_voice']} | Style: {spec['writing_style']}")
                 st.write(f"Meta Required: {spec['meta_required']} | Schema: {spec['schema_toggle']}")
+                # Display advanced fields
+                if spec["reinforce_eeat"]:
+                    st.write("E-E-A-T: On")
+                if spec["include_citations"]:
+                    st.write("Citations: On")
+                if spec["practice_location"]:
+                    st.write(f"Location: {spec['practice_location']}")
+                if spec["practice_name"]:
+                    st.write(f"Practice Name: {spec['practice_name']}")
+
                 if spec['custom_template']:
                     st.write(f"**Custom Template**: {spec['custom_template'][:60]}... (truncated)")
                 remove_btn = st.button(f"Remove Page {idx+1}", key=f"remove_{idx}")
                 if remove_btn:
                     st.session_state.page_specs.pop(idx)
-                    #st.experimental_rerun()
+                    st.experimental_rerun()
 
             st.write("---")
             st.subheader("Generate All Bulk Pages")
@@ -412,7 +503,13 @@ def main():
                                 writing_style=spec["writing_style"],
                                 meta_required=spec["meta_required"],
                                 structured_data=spec["schema_toggle"],
-                                custom_template=spec["custom_template"]
+                                custom_template=spec["custom_template"],
+                                variation_num=1,
+                                # Pass in advanced fields
+                                reinforce_eeat=spec["reinforce_eeat"],
+                                include_citations=spec["include_citations"],
+                                practice_location=spec["practice_location"],
+                                practice_name=spec["practice_name"]
                             )
                             bulk_generated_text = generate_content_with_chatgpt(
                                 api_key=user_api_key,
@@ -430,7 +527,6 @@ def main():
             if st.button("Reset Specs"):
                 st.session_state.page_specs = []
                 st.success("All page specifications have been cleared.")
-
 
     # ------------------------------------------
     #     FULL WEBSITE GENERATION MODE
@@ -471,7 +567,11 @@ def main():
                         "writing_style": "SEO-focused",
                         "meta_required": True,
                         "schema_toggle": True,
-                        "custom_template": ""
+                        "custom_template": "",
+                        "reinforce_eeat": False,
+                        "include_citations": False,
+                        "practice_location": "",
+                        "practice_name": ""
                     }
 
                 config = st.session_state.full_site_configs[pg_type]
@@ -485,17 +585,33 @@ def main():
                     config["tone_of_voice"] = st.selectbox(
                         f"{pg_type}: Tone of Voice",
                         ["Professional", "Casual", "Persuasive", "Technical", "Friendly", "Authoritative"],
-                        index=0 if config["tone_of_voice"] == "Professional" else 1
+                        index=0
                     )
                     config["meta_required"] = st.checkbox(f"{pg_type}: Generate Meta?", value=config["meta_required"])
                 with col2:
                     config["writing_style"] = st.selectbox(
                         f"{pg_type}: Writing Style",
                         ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"],
-                        index=0 if config["writing_style"] == "SEO-focused" else 1
+                        index=0
                     )
                     config["schema_toggle"] = st.checkbox(f"{pg_type}: Include Schema?", value=config["schema_toggle"])
                 
+                # NEW: Additional advanced fields
+                config["reinforce_eeat"] = st.checkbox(
+                    f"{pg_type}: Reinforce E-E-A-T?", value=config["reinforce_eeat"]
+                )
+                config["include_citations"] = st.checkbox(
+                    f"{pg_type}: Include Citations?", value=config["include_citations"]
+                )
+                config["practice_location"] = st.text_input(
+                    f"{pg_type}: Practice Location (City, State)",
+                    value=config["practice_location"]
+                )
+                config["practice_name"] = st.text_input(
+                    f"{pg_type}: Practice/Doctor Name",
+                    value=config["practice_name"]
+                )
+
                 config["custom_template"] = st.text_area(
                     f"{pg_type}: Custom Template (Optional)",
                     value=config["custom_template"]
@@ -521,7 +637,12 @@ def main():
                             meta_required=cfg["meta_required"],
                             structured_data=cfg["schema_toggle"],
                             custom_template=cfg["custom_template"],
-                            variation_num=1
+                            variation_num=1,
+                            # Pass advanced fields here
+                            reinforce_eeat=cfg["reinforce_eeat"],
+                            include_citations=cfg["include_citations"],
+                            practice_location=cfg["practice_location"],
+                            practice_name=cfg["practice_name"]
                         )
                         site_gen_text = generate_content_with_chatgpt(
                             api_key=user_api_key,
