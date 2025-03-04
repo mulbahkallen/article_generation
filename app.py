@@ -26,8 +26,7 @@ st.set_page_config(
 # =============================
 # =      PAGE BREAKDOWNS      =
 # =============================
-# This dictionary stores the detailed breakdown for certain page types.
-# You can add more page types or adjust constraints as needed.
+# Predefined field breakdowns for certain pages.
 PAGE_BREAKDOWNS = {
     "Homepage": [
         "H1 [20-60 characters]",
@@ -36,7 +35,7 @@ PAGE_BREAKDOWNS = {
         "H2 [30-70 characters]",
         "Body 1 [3-5 sentences]",
         "H2-2 Services [30-70 characters]",
-        "[Service collection]",  # optional placeholder
+        "[Service collection]",
         "H2-3 [30-70 characters]",
         "Body 2 [3-5 sentences]",
         "H2-4 [About] [30-70 characters]",
@@ -54,18 +53,18 @@ PAGE_BREAKDOWNS = {
     ]
 }
 
-def get_breakdown_instructions(page_type: str) -> str:
+def format_breakdown_list(breakdown_list) -> str:
     """
-    Returns a formatted string of detailed breakdown instructions
-    if the page_type has a breakdown in PAGE_BREAKDOWNS.
+    Takes a list of field descriptions (e.g., ["H1 [20-60 chars]", "Body [3 paragraphs]"])
+    and formats them into multiline instructions.
     """
-    if page_type in PAGE_BREAKDOWNS:
-        breakdown_list = PAGE_BREAKDOWNS[page_type]
-        instructions = ["Please structure the content using these fields and constraints:"]
-        for i, field in enumerate(breakdown_list, start=1):
-            instructions.append(f"{i}. {field}")
-        return "\n".join(instructions)
-    return ""
+    if not breakdown_list:
+        return ""
+    instructions = ["Please structure the content with these fields and constraints:"]
+    for i, field in enumerate(breakdown_list, start=1):
+        instructions.append(f"{i}. {field}")
+    instructions.append("Adhere to these length/word constraints as closely as possible.")
+    return "\n".join(instructions)
 
 # =============================
 # =      HELPER FUNCTIONS     =
@@ -88,7 +87,7 @@ def generate_content_with_chatgpt(
 
     for attempt in range(max_retries):
         try:
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -100,7 +99,7 @@ def generate_content_with_chatgpt(
             content = response.choices[0].message.content
             return content.strip()
 
-        except RateLimitError as e:
+        except RateLimitError:
             wait_time = 2 ** attempt
             st.warning(
                 f"Rate limit error (attempt {attempt+1}/{max_retries}). "
@@ -137,17 +136,21 @@ def generate_prompt(
     structured_data: bool,
     custom_template: str = "",
     variation_num: int = 1,
-    # NEW: Additional arguments for local SEO, E-E-A-T, and detailed breakdown
+    # Additional arguments for local SEO, E-E-A-T, and breakdown
     reinforce_eeat: bool = False,
     include_citations: bool = False,
     practice_location: str = "",
     practice_name: str = "",
-    detailed_breakdown: bool = False
+    detailed_breakdown: bool = False,
+    custom_breakdown_fields: List[str] = None
 ) -> str:
     """
-    Constructs a user prompt to feed into ChatGPT based on user inputs,
+    Constructs a user prompt for ChatGPT based on user inputs,
     including advanced SEO toggles and optional detailed CMS breakdown.
     """
+
+    if custom_breakdown_fields is None:
+        custom_breakdown_fields = []
 
     base_instructions = [
         f"Page Type: {page_type}",
@@ -191,15 +194,23 @@ def generate_prompt(
     # Variation note:
     variation_text = f"Generate {variation_num} variations of the content.\n" if variation_num > 1 else ""
 
-    # NEW: If detailed_breakdown is True and page_type is known, add breakdown instructions
+    # Handling the breakdown instructions
     breakdown_instructions = ""
     if detailed_breakdown:
-        breakdown_instructions = get_breakdown_instructions(page_type)
+        if custom_breakdown_fields:
+            # Use the user's custom breakdown
+            breakdown_instructions = format_breakdown_list(custom_breakdown_fields)
+        else:
+            # Fall back to PAGE_BREAKDOWNS if the user hasn't defined custom fields
+            if page_type in PAGE_BREAKDOWNS:
+                fallback = PAGE_BREAKDOWNS[page_type]
+                breakdown_instructions = format_breakdown_list(fallback)
+            else:
+                # No predefined or custom breakdown found
+                breakdown_instructions = ""
+
         if breakdown_instructions:
-            breakdown_instructions = (
-                "\n\n" + breakdown_instructions + 
-                "\n\nAdhere to these length/word constraints as closely as possible."
-            )
+            breakdown_instructions = "\n\n" + breakdown_instructions
 
     user_prompt = (
         f"Please produce a {page_type} with the following requirements:\n\n"
@@ -253,10 +264,43 @@ def main():
     # Prepare session state for storing results or specs
     if "page_specs" not in st.session_state:
         st.session_state.page_specs = []
-
-    # We'll store generated variations for refining
     if "generated_variations" not in st.session_state:
         st.session_state.generated_variations = []
+    # For full site config
+    if "full_site_configs" not in st.session_state:
+        st.session_state.full_site_configs = {}
+    # NEW: We'll store custom breakdown fields in session state too
+    if "custom_breakdown" not in st.session_state:
+        # st.session_state.custom_breakdown will be a dict: { page_type: [list of field lines], ... }
+        st.session_state.custom_breakdown = {}
+
+    # ------------------------------------------
+    #   Function to handle custom breakdown UI
+    # ------------------------------------------
+    def custom_breakdown_ui(page_key: str):
+        """
+        Allows the user to build or edit a custom breakdown for a given page_key
+        (e.g. "Homepage", "Service Page", or something else).
+        """
+        st.write(f"Custom Breakdown Fields for: {page_key}")
+        if page_key not in st.session_state.custom_breakdown:
+            st.session_state.custom_breakdown[page_key] = []
+
+        # Display existing fields
+        for idx, field_line in enumerate(st.session_state.custom_breakdown[page_key]):
+            st.markdown(f"**Field {idx+1}**: {field_line}")
+            remove_btn = st.button(f"Remove Field {idx+1}", key=f"cb_remove_{page_key}_{idx}")
+            if remove_btn:
+                st.session_state.custom_breakdown[page_key].pop(idx)
+                st.experimental_rerun()
+
+        # Form to add new field line
+        with st.form(f"add_custom_field_{page_key}", clear_on_submit=True):
+            new_field = st.text_input(f"Add new field for {page_key} (e.g. 'H1 [20-60 chars]')")
+            submitted_field = st.form_submit_button("Add Field")
+            if submitted_field and new_field.strip():
+                st.session_state.custom_breakdown[page_key].append(new_field.strip())
+                st.success(f"Added new field: {new_field}")
 
     # ------------------------------------------
     #        SINGLE-PAGE GENERATION MODE
@@ -302,10 +346,15 @@ def main():
         meta_toggle = st.checkbox("Generate Meta Title & Description?", value=True)
         schema_toggle = st.checkbox("Include Structured Data Suggestions?", value=True)
 
-        # NEW: Detailed CMS Breakdown toggle
+        # Detailed Breakdown toggle
         detailed_breakdown = False
-        if page_type in PAGE_BREAKDOWNS.keys():
+        if page_type in PAGE_BREAKDOWNS.keys() or page_type not in ["Homepage","Service Page"]:
+            # Even if it's not in PAGE_BREAKDOWNS, the user can build a custom breakdown for it
             detailed_breakdown = st.checkbox("Use Detailed CMS Breakdown?", value=False)
+            if detailed_breakdown:
+                # Show the custom breakdown builder
+                with st.expander("Create or Edit a Custom Breakdown", expanded=False):
+                    custom_breakdown_ui(page_type)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -338,6 +387,7 @@ def main():
         if st.button("Generate Content"):
             with st.spinner("Generating content..."):
                 # Build the user prompt
+                custom_breakdown_list = st.session_state.custom_breakdown.get(page_type, [])
                 user_prompt = generate_prompt(
                     page_type=page_type,
                     word_count=word_count,
@@ -348,12 +398,12 @@ def main():
                     structured_data=schema_toggle,
                     custom_template=custom_template,
                     variation_num=number_of_variations,
-                    # Advanced fields
                     reinforce_eeat=reinforce_eeat,
                     include_citations=include_citations,
                     practice_location=practice_location,
                     practice_name=practice_name,
-                    detailed_breakdown=detailed_breakdown
+                    detailed_breakdown=detailed_breakdown,
+                    custom_breakdown_fields=custom_breakdown_list
                 )
                 
                 generated_text = generate_content_with_chatgpt(
@@ -493,16 +543,19 @@ def main():
                         ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"])
                     b_custom_template = st.text_area("Custom Template (Optional)")
 
-                # advanced toggles for each page spec
                 reinforce_eeat_bulk = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
                 include_citations_bulk = st.checkbox("Include References/Citations?", value=False)
                 practice_location_bulk = st.text_input("Practice Location (City, State)", value="")
                 practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
 
-                # NEW: Detailed Breakdown for Bulk
+                # Detailed Breakdown for Bulk
                 detailed_breakdown_bulk = False
-                if b_page_type in PAGE_BREAKDOWNS.keys():
+                if b_page_type in PAGE_BREAKDOWNS.keys() or b_page_type not in ["Homepage","Service Page"]:
                     detailed_breakdown_bulk = st.checkbox("Use Detailed CMS Breakdown?", value=False)
+                    if detailed_breakdown_bulk:
+                        # Show the custom breakdown builder for that page
+                        with st.expander("Create or Edit a Custom Breakdown", expanded=False):
+                            custom_breakdown_ui(b_page_type)
 
                 submitted = st.form_submit_button("Add Page Specification")
                 if submitted:
@@ -545,6 +598,7 @@ def main():
                     st.write(f"Practice Name: {spec['practice_name']}")
                 if spec["detailed_breakdown"]:
                     st.write("Detailed CMS Breakdown: On")
+
                 if spec['custom_template']:
                     st.write(f"**Custom Template**: {spec['custom_template'][:60]}... (truncated)")
 
@@ -564,6 +618,8 @@ def main():
                     st.write("## Bulk Generation Results")
                     for idx, spec in enumerate(st.session_state.page_specs):
                         with st.spinner(f"Generating Page {idx+1}: {spec['page_type']}..."):
+                            # Grab any custom breakdown fields the user defined
+                            custom_breakdown_list = st.session_state.custom_breakdown.get(spec["page_type"], [])
                             user_prompt = generate_prompt(
                                 page_type=spec["page_type"],
                                 word_count=spec["word_count"],
@@ -578,7 +634,8 @@ def main():
                                 include_citations=spec["include_citations"],
                                 practice_location=spec["practice_location"],
                                 practice_name=spec["practice_name"],
-                                detailed_breakdown=spec["detailed_breakdown"]
+                                detailed_breakdown=spec["detailed_breakdown"],
+                                custom_breakdown_fields=custom_breakdown_list
                             )
                             bulk_generated_text = generate_content_with_chatgpt(
                                 api_key=user_api_key,
@@ -621,29 +678,27 @@ def main():
         )
 
         st.write("Configure each selected page:")
-        # We can store a dictionary of page configs in session state
-        if "full_site_configs" not in st.session_state:
-            st.session_state.full_site_configs = {}
 
-        # Create a form for each page type dynamically
+        for pg_type in selected_pages:
+            if pg_type not in st.session_state.full_site_configs:
+                # Initialize a default config with the needed keys (including 'detailed_breakdown', 'custom_breakdown')
+                st.session_state.full_site_configs[pg_type] = {
+                    "word_count": 600,
+                    "keywords": [],
+                    "tone_of_voice": "Professional",
+                    "writing_style": "SEO-focused",
+                    "meta_required": True,
+                    "schema_toggle": True,
+                    "custom_template": "",
+                    "reinforce_eeat": False,
+                    "include_citations": False,
+                    "practice_location": "",
+                    "practice_name": "",
+                    "detailed_breakdown": False
+                }
+
         for pg_type in selected_pages:
             with st.expander(f"Settings for {pg_type}", expanded=False):
-                if pg_type not in st.session_state.full_site_configs:
-                    st.session_state.full_site_configs[pg_type] = {
-                        "word_count": 600,
-                        "keywords": [],
-                        "tone_of_voice": "Professional",
-                        "writing_style": "SEO-focused",
-                        "meta_required": True,
-                        "schema_toggle": True,
-                        "custom_template": "",
-                        "reinforce_eeat": False,
-                        "include_citations": False,
-                        "practice_location": "",
-                        "practice_name": "",
-                        "detailed_breakdown": False
-                    }
-
                 config = st.session_state.full_site_configs[pg_type]
                 config["word_count"] = st.slider(f"{pg_type}: Word Count", 200, 3000, config["word_count"], step=100)
                 kws_input = st.text_input(f"{pg_type}: Primary Keywords (comma-separated)",
@@ -666,7 +721,6 @@ def main():
                     )
                     config["schema_toggle"] = st.checkbox(f"{pg_type}: Include Schema?", value=config["schema_toggle"])
                 
-                # Additional advanced fields
                 config["reinforce_eeat"] = st.checkbox(
                     f"{pg_type}: Reinforce E-E-A-T?", value=config["reinforce_eeat"]
                 )
@@ -682,12 +736,15 @@ def main():
                     value=config["practice_name"]
                 )
 
-                # Detailed breakdown for Full-Site
-                if pg_type in PAGE_BREAKDOWNS.keys():
+                # Detailed breakdown
+                if pg_type in PAGE_BREAKDOWNS or pg_type not in ["Homepage","Service Page"]:
                     config["detailed_breakdown"] = st.checkbox(
                         f"{pg_type}: Use Detailed CMS Breakdown?",
                         value=config["detailed_breakdown"]
                     )
+                    if config["detailed_breakdown"]:
+                        with st.expander(f"Create or Edit Custom Breakdown for {pg_type}", expanded=False):
+                            custom_breakdown_ui(pg_type)
 
                 config["custom_template"] = st.text_area(
                     f"{pg_type}: Custom Template (Optional)",
@@ -705,6 +762,8 @@ def main():
                 for pg_type in selected_pages:
                     cfg = st.session_state.full_site_configs[pg_type]
                     with st.spinner(f"Generating {pg_type}..."):
+                        # Retrieve user-defined breakdown if any
+                        custom_breakdown_list = st.session_state.custom_breakdown.get(pg_type, [])
                         user_prompt = generate_prompt(
                             page_type=pg_type,
                             word_count=cfg["word_count"],
@@ -719,7 +778,8 @@ def main():
                             include_citations=cfg["include_citations"],
                             practice_location=cfg["practice_location"],
                             practice_name=cfg["practice_name"],
-                            detailed_breakdown=cfg["detailed_breakdown"]
+                            detailed_breakdown=cfg["detailed_breakdown"],
+                            custom_breakdown_fields=custom_breakdown_list
                         )
                         site_gen_text = generate_content_with_chatgpt(
                             api_key=user_api_key,
