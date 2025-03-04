@@ -55,8 +55,7 @@ PAGE_BREAKDOWNS = {
 
 def format_breakdown_list(breakdown_list) -> str:
     """
-    Takes a list of field descriptions (e.g., ["H1 [20-60 chars]", "Body [3 paragraphs]"])
-    and formats them into multiline instructions.
+    Takes a list of field descriptions and formats them into multiline instructions.
     """
     if not breakdown_list:
         return ""
@@ -206,7 +205,6 @@ def generate_prompt(
                 fallback = PAGE_BREAKDOWNS[page_type]
                 breakdown_instructions = format_breakdown_list(fallback)
             else:
-                # No predefined or custom breakdown found
                 breakdown_instructions = ""
 
         if breakdown_instructions:
@@ -269,7 +267,7 @@ def main():
     # For full site config
     if "full_site_configs" not in st.session_state:
         st.session_state.full_site_configs = {}
-    # NEW: We'll store custom breakdown fields in session state too
+    # We'll store custom breakdown fields in session state too
     if "custom_breakdown" not in st.session_state:
         # st.session_state.custom_breakdown will be a dict: { page_type: [list of field lines], ... }
         st.session_state.custom_breakdown = {}
@@ -277,10 +275,15 @@ def main():
     # ------------------------------------------
     #   Function to handle custom breakdown UI
     # ------------------------------------------
-    def custom_breakdown_ui(page_key: str):
+    def structured_breakdown_builder(page_key: str):
         """
-        Allows the user to build or edit a custom breakdown for a given page_key
-        (e.g. "Homepage", "Service Page", or something else).
+        A more guided approach to building each breakdown field:
+          - Field Label (e.g. "H1", "Tagline")
+          - Constraint Type (characters, words, sentences)
+          - Min Value, Max Value
+          - Optional Additional Notes
+        We'll store them as a formatted line, e.g.:
+          "H1 [20-60 characters] - Focus on brand value"
         """
         st.write(f"Custom Breakdown Fields for: {page_key}")
         if page_key not in st.session_state.custom_breakdown:
@@ -294,13 +297,25 @@ def main():
                 st.session_state.custom_breakdown[page_key].pop(idx)
                 st.experimental_rerun()
 
-        # Form to add new field line
-        with st.form(f"add_custom_field_{page_key}", clear_on_submit=True):
-            new_field = st.text_input(f"Add new field for {page_key} (e.g. 'H1 [20-60 chars]')")
-            submitted_field = st.form_submit_button("Add Field")
-            if submitted_field and new_field.strip():
-                st.session_state.custom_breakdown[page_key].append(new_field.strip())
-                st.success(f"Added new field: {new_field}")
+        # Form to add a new "structured" field
+        with st.form(f"add_structured_field_{page_key}", clear_on_submit=True):
+            st.subheader("Add a New Field")
+            label = st.text_input("Field Label", help="e.g. 'H1', 'Tagline', 'Intro Blurb'")
+            constraint_type = st.selectbox("Constraint Type", ["characters", "words", "sentences"])
+            colA, colB = st.columns(2)
+            with colA:
+                min_val = st.number_input("Min Value", min_value=0, max_value=9999, value=1)
+            with colB:
+                max_val = st.number_input("Max Value", min_value=0, max_value=9999, value=3)
+            additional_notes = st.text_area("Additional Notes (Optional)", help="Extra instructions or constraints")
+
+            submitted_field = st.form_submit_button("Add Field to Breakdown")
+            if submitted_field and label.strip():
+                # Format the line
+                notes_str = f" - {additional_notes.strip()}" if additional_notes.strip() else ""
+                line = f"{label.strip()} [{min_val}-{max_val} {constraint_type}]{notes_str}"
+                st.session_state.custom_breakdown[page_key].append(line)
+                st.success(f"Added new field: {line}")
 
     # ------------------------------------------
     #        SINGLE-PAGE GENERATION MODE
@@ -348,13 +363,11 @@ def main():
 
         # Detailed Breakdown toggle
         detailed_breakdown = False
-        if page_type in PAGE_BREAKDOWNS.keys() or page_type not in ["Homepage","Service Page"]:
-            # Even if it's not in PAGE_BREAKDOWNS, the user can build a custom breakdown for it
-            detailed_breakdown = st.checkbox("Use Detailed CMS Breakdown?", value=False)
-            if detailed_breakdown:
-                # Show the custom breakdown builder
-                with st.expander("Create or Edit a Custom Breakdown", expanded=False):
-                    custom_breakdown_ui(page_type)
+        # We allow a user-defined breakdown for any page. 
+        detailed_breakdown = st.checkbox("Use Detailed CMS Breakdown?", value=False)
+        if detailed_breakdown:
+            with st.expander("Build or Edit a Custom Breakdown", expanded=False):
+                structured_breakdown_builder(page_type)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -549,13 +562,11 @@ def main():
                 practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
 
                 # Detailed Breakdown for Bulk
-                detailed_breakdown_bulk = False
-                if b_page_type in PAGE_BREAKDOWNS.keys() or b_page_type not in ["Homepage","Service Page"]:
-                    detailed_breakdown_bulk = st.checkbox("Use Detailed CMS Breakdown?", value=False)
-                    if detailed_breakdown_bulk:
-                        # Show the custom breakdown builder for that page
-                        with st.expander("Create or Edit a Custom Breakdown", expanded=False):
-                            custom_breakdown_ui(b_page_type)
+                detailed_breakdown_bulk = st.checkbox("Use Detailed CMS Breakdown?", value=False)
+                if detailed_breakdown_bulk:
+                    # Show the structured breakdown builder for that page type
+                    with st.expander("Build or Edit a Custom Breakdown", expanded=False):
+                        structured_breakdown_builder(b_page_type)
 
                 submitted = st.form_submit_button("Add Page Specification")
                 if submitted:
@@ -681,7 +692,6 @@ def main():
 
         for pg_type in selected_pages:
             if pg_type not in st.session_state.full_site_configs:
-                # Initialize a default config with the needed keys (including 'detailed_breakdown', 'custom_breakdown')
                 st.session_state.full_site_configs[pg_type] = {
                     "word_count": 600,
                     "keywords": [],
@@ -736,15 +746,13 @@ def main():
                     value=config["practice_name"]
                 )
 
-                # Detailed breakdown
-                if pg_type in PAGE_BREAKDOWNS or pg_type not in ["Homepage","Service Page"]:
-                    config["detailed_breakdown"] = st.checkbox(
-                        f"{pg_type}: Use Detailed CMS Breakdown?",
-                        value=config["detailed_breakdown"]
-                    )
-                    if config["detailed_breakdown"]:
-                        with st.expander(f"Create or Edit Custom Breakdown for {pg_type}", expanded=False):
-                            custom_breakdown_ui(pg_type)
+                config["detailed_breakdown"] = st.checkbox(
+                    f"{pg_type}: Use Detailed CMS Breakdown?",
+                    value=config["detailed_breakdown"]
+                )
+                if config["detailed_breakdown"]:
+                    with st.expander(f"Build or Edit Custom Breakdown for {pg_type}", expanded=False):
+                        structured_breakdown_builder(pg_type)
 
                 config["custom_template"] = st.text_area(
                     f"{pg_type}: Custom Template (Optional)",
@@ -762,7 +770,6 @@ def main():
                 for pg_type in selected_pages:
                     cfg = st.session_state.full_site_configs[pg_type]
                     with st.spinner(f"Generating {pg_type}..."):
-                        # Retrieve user-defined breakdown if any
                         custom_breakdown_list = st.session_state.custom_breakdown.get(pg_type, [])
                         user_prompt = generate_prompt(
                             page_type=pg_type,
