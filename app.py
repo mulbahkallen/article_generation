@@ -200,7 +200,7 @@ def generate_prompt(
             # Use the user's custom breakdown
             breakdown_instructions = format_breakdown_list(custom_breakdown_fields)
         else:
-            # Fall back to PAGE_BREAKDOWNS if the user hasn't defined custom fields
+            # Fall back to PAGE_BREAKDOWNS if user hasn't defined custom fields
             if page_type in PAGE_BREAKDOWNS:
                 fallback = PAGE_BREAKDOWNS[page_type]
                 breakdown_instructions = format_breakdown_list(fallback)
@@ -264,26 +264,19 @@ def main():
         st.session_state.page_specs = []
     if "generated_variations" not in st.session_state:
         st.session_state.generated_variations = []
-    # For full site config
     if "full_site_configs" not in st.session_state:
         st.session_state.full_site_configs = {}
-    # We'll store custom breakdown fields in session state too
     if "custom_breakdown" not in st.session_state:
         # st.session_state.custom_breakdown will be a dict: { page_type: [list of field lines], ... }
         st.session_state.custom_breakdown = {}
 
     # ------------------------------------------
-    #   Function to handle custom breakdown UI
+    #   UPDATED: structured_breakdown_builder
     # ------------------------------------------
     def structured_breakdown_builder(page_key: str):
         """
-        A more guided approach to building each breakdown field:
-          - Field Label (e.g. "H1", "Tagline")
-          - Constraint Type (characters, words, sentences)
-          - Min Value, Max Value
-          - Optional Additional Notes
-        We'll store them as a formatted line, e.g.:
-          "H1 [20-60 characters] - Focus on brand value"
+        A more guided approach to building each breakdown field.
+        The label is now a dropdown menu instead of a text input.
         """
         st.write(f"Custom Breakdown Fields for: {page_key}")
         if page_key not in st.session_state.custom_breakdown:
@@ -297,25 +290,42 @@ def main():
                 st.session_state.custom_breakdown[page_key].pop(idx)
                 st.experimental_rerun()
 
-        # Form to add a new "structured" field
+        # Drop-down options for label
+        label_options = [
+            "H1", "H2", "H3", "Tagline", "Intro Blurb", 
+            "Body Section", "Call To Action", "FAQ", "Custom"
+        ]
+
         with st.form(f"add_structured_field_{page_key}", clear_on_submit=True):
             st.subheader("Add a New Field")
-            label = st.text_input("Field Label", help="e.g. 'H1', 'Tagline', 'Intro Blurb'")
+            # Instead of text_input, we use a selectbox:
+            selected_label = st.selectbox("Field Label", label_options, help="Choose a heading or section label.")
+            # If 'Custom' is selected, we can allow free text:
+            custom_label = ""
+            if selected_label == "Custom":
+                custom_label = st.text_input("Custom Label", help="Enter a unique heading if not in the list above")
+
             constraint_type = st.selectbox("Constraint Type", ["characters", "words", "sentences"])
             colA, colB = st.columns(2)
             with colA:
                 min_val = st.number_input("Min Value", min_value=0, max_value=9999, value=1)
             with colB:
                 max_val = st.number_input("Max Value", min_value=0, max_value=9999, value=3)
+
             additional_notes = st.text_area("Additional Notes (Optional)", help="Extra instructions or constraints")
 
             submitted_field = st.form_submit_button("Add Field to Breakdown")
-            if submitted_field and label.strip():
-                # Format the line
-                notes_str = f" - {additional_notes.strip()}" if additional_notes.strip() else ""
-                line = f"{label.strip()} [{min_val}-{max_val} {constraint_type}]{notes_str}"
-                st.session_state.custom_breakdown[page_key].append(line)
-                st.success(f"Added new field: {line}")
+            if submitted_field:
+                # Determine which label to use
+                final_label = custom_label.strip() if selected_label == "Custom" else selected_label
+                
+                if final_label:
+                    notes_str = f" - {additional_notes.strip()}" if additional_notes.strip() else ""
+                    line = f"{final_label} [{min_val}-{max_val} {constraint_type}]{notes_str}"
+                    st.session_state.custom_breakdown[page_key].append(line)
+                    st.success(f"Added new field: {line}")
+                else:
+                    st.warning("Please provide a valid label if 'Custom' was chosen.")
 
     # ------------------------------------------
     #        SINGLE-PAGE GENERATION MODE
@@ -327,14 +337,12 @@ def main():
             "(e.g., a single blog post, a single service page, etc.)"
         )
 
-        # Advanced settings expander
         with st.expander("Advanced SEO & Local Settings", expanded=False):
             reinforce_eeat = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
             include_citations = st.checkbox("Include References/Citations?", value=False)
             practice_location = st.text_input("Practice Location (City, State)", value="")
             practice_name = st.text_input("Practice/Doctor Name", value="")
 
-        # Basic Controls
         page_type = st.selectbox(
             "Page Type",
             ["Homepage", "Service Page", "Blog Post", "About Us Page", "Product Page", "Other"]
@@ -361,9 +369,6 @@ def main():
         meta_toggle = st.checkbox("Generate Meta Title & Description?", value=True)
         schema_toggle = st.checkbox("Include Structured Data Suggestions?", value=True)
 
-        # Detailed Breakdown toggle
-        detailed_breakdown = False
-        # We allow a user-defined breakdown for any page. 
         detailed_breakdown = st.checkbox("Use Detailed CMS Breakdown?", value=False)
         if detailed_breakdown:
             with st.expander("Build or Edit a Custom Breakdown", expanded=False):
@@ -392,14 +397,12 @@ def main():
         st.write("---")
         st.subheader("Generate Page Content")
 
-        # Prepare placeholders to display the generated content
         content_placeholders = []
         for i in range(number_of_variations):
             content_placeholders.append(st.empty())
 
         if st.button("Generate Content"):
             with st.spinner("Generating content..."):
-                # Build the user prompt
                 custom_breakdown_list = st.session_state.custom_breakdown.get(page_type, [])
                 user_prompt = generate_prompt(
                     page_type=page_type,
@@ -430,7 +433,6 @@ def main():
                     max_tokens=3000
                 )
                 
-                # Handle multiple variations if requested
                 if number_of_variations > 1:
                     variations = generated_text.split("Variation")
                     cleaned_variations = [v for v in variations if len(v.strip()) > 10]
@@ -440,7 +442,7 @@ def main():
                 else:
                     cleaned_variations = [generated_text]
                     
-                st.session_state.generated_variations = cleaned_variations  # Store for refinement
+                st.session_state.generated_variations = cleaned_variations
 
                 for i, placeholder in enumerate(content_placeholders):
                     if i < len(cleaned_variations):
@@ -454,10 +456,7 @@ def main():
             "Select Variation to Refine (if multiple)",
             min_value=1, max_value=number_of_variations, value=1
         )
-        refine_input = st.text_area(
-            "Refinement Instructions",
-            help="Provide instructions to improve or adjust the generated content."
-        )
+        refine_input = st.text_area("Refinement Instructions", help="Provide instructions to improve or adjust the content.")
         if st.button("Refine"):
             with st.spinner("Refining..."):
                 var_index = refine_variation_index - 1
@@ -481,7 +480,6 @@ def main():
                         temperature=temperature,
                         max_tokens=3000
                     )
-                    # Update the stored variation
                     st.session_state.generated_variations[var_index] = refined_result
                     st.success("Refined content updated.")
                     st.write(refined_result)
@@ -492,7 +490,6 @@ def main():
             "Select Variation to Export",
             min_value=1, max_value=number_of_variations, value=1
         )
-
         export_format = st.selectbox("Export Format", ["HTML", "JSON", "Text"])
 
         if st.button("Export"):
@@ -538,7 +535,6 @@ def main():
             "For example, multiple blog posts or multiple service pages."
         )
 
-        # Add a new page specification
         with st.expander("Add a New Page Specification"):
             with st.form("add_page_spec_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
@@ -561,10 +557,8 @@ def main():
                 practice_location_bulk = st.text_input("Practice Location (City, State)", value="")
                 practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
 
-                # Detailed Breakdown for Bulk
                 detailed_breakdown_bulk = st.checkbox("Use Detailed CMS Breakdown?", value=False)
                 if detailed_breakdown_bulk:
-                    # Show the structured breakdown builder for that page type
                     with st.expander("Build or Edit a Custom Breakdown", expanded=False):
                         structured_breakdown_builder(b_page_type)
 
@@ -589,7 +583,6 @@ def main():
                     st.session_state.page_specs.append(new_spec)
                     st.success(f"Added a new {b_page_type} spec!")
 
-        # Display current page specs
         st.write("### Current Page Specifications for Bulk Generation:")
         if not st.session_state.page_specs:
             st.info("No page specifications added yet. Use the 'Add a New Page Specification' expander above.")
@@ -629,7 +622,6 @@ def main():
                     st.write("## Bulk Generation Results")
                     for idx, spec in enumerate(st.session_state.page_specs):
                         with st.spinner(f"Generating Page {idx+1}: {spec['page_type']}..."):
-                            # Grab any custom breakdown fields the user defined
                             custom_breakdown_list = st.session_state.custom_breakdown.get(spec["page_type"], [])
                             user_prompt = generate_prompt(
                                 page_type=spec["page_type"],
@@ -675,13 +667,11 @@ def main():
             "Service Pages, Blog posts, etc.—in one flow."
         )
 
-        # Define default page types for a typical medical/healthcare site
         default_pages = ["Homepage", "About Us Page", "Service Page", "Blog Post", "Contact Page"]
         st.info(
             "Below is a typical set of website pages. Specify your details, then generate them all at once."
         )
 
-        # Let the user pick which pages to generate
         selected_pages = st.multiselect(
             "Select the pages to generate in this full website process:",
             default_pages,
