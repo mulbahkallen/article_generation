@@ -24,6 +24,50 @@ st.set_page_config(
 )
 
 # =============================
+# =      PAGE BREAKDOWNS      =
+# =============================
+# This dictionary stores the detailed breakdown for certain page types.
+# You can add more page types or adjust constraints as needed.
+PAGE_BREAKDOWNS = {
+    "Homepage": [
+        "H1 [20-60 characters]",
+        "Tagline [6-12 words]",
+        "Intro Blurb [15-20 words]",
+        "H2 [30-70 characters]",
+        "Body 1 [3-5 sentences]",
+        "H2-2 Services [30-70 characters]",
+        "[Service collection]",  # optional placeholder
+        "H2-3 [30-70 characters]",
+        "Body 2 [3-5 sentences]",
+        "H2-4 [About] [30-70 characters]",
+        "Body 3 [3-5 sentences]"
+    ],
+    "Service Page": [
+        "H1 [20-60 characters]",
+        "Intro Blurb [15-20 words]",
+        "H2 [30-70 characters]",
+        "Body 1 [3-5 sentences]",
+        "H2-2 [30-70 characters]",
+        "Body 2 [3-5 sentences]",
+        "H2-4 [About] [30-70 characters]",
+        "Body 3 [3-5 sentences]"
+    ]
+}
+
+def get_breakdown_instructions(page_type: str) -> str:
+    """
+    Returns a formatted string of detailed breakdown instructions
+    if the page_type has a breakdown in PAGE_BREAKDOWNS.
+    """
+    if page_type in PAGE_BREAKDOWNS:
+        breakdown_list = PAGE_BREAKDOWNS[page_type]
+        instructions = ["Please structure the content using these fields and constraints:"]
+        for i, field in enumerate(breakdown_list, start=1):
+            instructions.append(f"{i}. {field}")
+        return "\n".join(instructions)
+    return ""
+
+# =============================
 # =      HELPER FUNCTIONS     =
 # =============================
 
@@ -93,14 +137,16 @@ def generate_prompt(
     structured_data: bool,
     custom_template: str = "",
     variation_num: int = 1,
-    # NEW: Additional arguments for local SEO and E-E-A-T
+    # NEW: Additional arguments for local SEO, E-E-A-T, and detailed breakdown
     reinforce_eeat: bool = False,
     include_citations: bool = False,
     practice_location: str = "",
-    practice_name: str = ""
+    practice_name: str = "",
+    detailed_breakdown: bool = False
 ) -> str:
     """
-    Constructs a user prompt to feed into ChatGPT based on user inputs.
+    Constructs a user prompt to feed into ChatGPT based on user inputs,
+    including advanced SEO toggles and optional detailed CMS breakdown.
     """
 
     base_instructions = [
@@ -113,7 +159,7 @@ def generate_prompt(
         "Include structured data markup suggestions." if structured_data else "No structured data suggestions needed."
     ]
 
-    # NEW: Conditionals to handle E-E-A-T, citations, local SEO
+    # Conditionals to handle E-E-A-T, citations, local SEO
     if reinforce_eeat:
         base_instructions.append(
             "Demonstrate strong E-E-A-T principles: provide expertise, authority, and trustworthiness in the content."
@@ -144,15 +190,27 @@ def generate_prompt(
     
     # Variation note:
     variation_text = f"Generate {variation_num} variations of the content.\n" if variation_num > 1 else ""
-    
+
+    # NEW: If detailed_breakdown is True and page_type is known, add breakdown instructions
+    breakdown_instructions = ""
+    if detailed_breakdown:
+        breakdown_instructions = get_breakdown_instructions(page_type)
+        if breakdown_instructions:
+            breakdown_instructions = (
+                "\n\n" + breakdown_instructions + 
+                "\n\nAdhere to these length/word constraints as closely as possible."
+            )
+
     user_prompt = (
         f"Please produce a {page_type} with the following requirements:\n\n"
         f"{prompt_instructions}\n\n"
         f"{variation_text}"
-        f"{custom_section}\n\n"
-        f"Ensure the final output is about {word_count} words. "
+        f"{custom_section}"
+        f"{breakdown_instructions}\n\n"
+        f"Ensure the final output is about {word_count} words in total. "
         f"Keep keywords natural and use best SEO practices."
     )
+
     return user_prompt
 
 
@@ -196,7 +254,7 @@ def main():
     if "page_specs" not in st.session_state:
         st.session_state.page_specs = []
 
-    # NEW: We'll store generated variations for refining
+    # We'll store generated variations for refining
     if "generated_variations" not in st.session_state:
         st.session_state.generated_variations = []
 
@@ -210,7 +268,7 @@ def main():
             "(e.g., a single blog post, a single service page, etc.)"
         )
 
-        # NEW: Advanced settings expander
+        # Advanced settings expander
         with st.expander("Advanced SEO & Local Settings", expanded=False):
             reinforce_eeat = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
             include_citations = st.checkbox("Include References/Citations?", value=False)
@@ -243,6 +301,11 @@ def main():
         
         meta_toggle = st.checkbox("Generate Meta Title & Description?", value=True)
         schema_toggle = st.checkbox("Include Structured Data Suggestions?", value=True)
+
+        # NEW: Detailed CMS Breakdown toggle
+        detailed_breakdown = False
+        if page_type in PAGE_BREAKDOWNS.keys():
+            detailed_breakdown = st.checkbox("Use Detailed CMS Breakdown?", value=False)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -285,11 +348,12 @@ def main():
                     structured_data=schema_toggle,
                     custom_template=custom_template,
                     variation_num=number_of_variations,
-                    # NEW ARGS for advanced settings
+                    # Advanced fields
                     reinforce_eeat=reinforce_eeat,
                     include_citations=include_citations,
                     practice_location=practice_location,
-                    practice_name=practice_name
+                    practice_name=practice_name,
+                    detailed_breakdown=detailed_breakdown
                 )
                 
                 generated_text = generate_content_with_chatgpt(
@@ -333,7 +397,6 @@ def main():
         )
         if st.button("Refine"):
             with st.spinner("Refining..."):
-                # Pull the variation from session state
                 var_index = refine_variation_index - 1
                 if var_index >= len(st.session_state.generated_variations):
                     st.warning("No content to refine. Please generate content first.")
@@ -343,7 +406,7 @@ def main():
                         "Refine the following content based on these instructions.\n\n"
                         f"Original Content:\n{content_to_refine}\n\n"
                         f"Instructions:\n{refine_input}\n"
-                        "Ensure the content remains SEO-friendly and medically appropriate."
+                        "Ensure the content remains SEO-friendly, accurate, and consistent with E-E-A-T."
                     )
                     refined_result = generate_content_with_chatgpt(
                         api_key=user_api_key,
@@ -355,7 +418,7 @@ def main():
                         temperature=temperature,
                         max_tokens=3000
                     )
-                    # Update the stored variation with the refined text
+                    # Update the stored variation
                     st.session_state.generated_variations[var_index] = refined_result
                     st.success("Refined content updated.")
                     st.write(refined_result)
@@ -370,7 +433,6 @@ def main():
         export_format = st.selectbox("Export Format", ["HTML", "JSON", "Text"])
 
         if st.button("Export"):
-            # Retrieve the chosen Variation's text
             var_idx = export_variation_index - 1
             if var_idx >= len(st.session_state.generated_variations):
                 st.warning("No variation found. Please generate content first.")
@@ -431,11 +493,16 @@ def main():
                         ["SEO-focused", "Storytelling", "Educational", "Conversion-driven", "Informative"])
                     b_custom_template = st.text_area("Custom Template (Optional)")
 
-                # NEW: advanced toggles for each page spec
+                # advanced toggles for each page spec
                 reinforce_eeat_bulk = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
                 include_citations_bulk = st.checkbox("Include References/Citations?", value=False)
                 practice_location_bulk = st.text_input("Practice Location (City, State)", value="")
                 practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
+
+                # NEW: Detailed Breakdown for Bulk
+                detailed_breakdown_bulk = False
+                if b_page_type in PAGE_BREAKDOWNS.keys():
+                    detailed_breakdown_bulk = st.checkbox("Use Detailed CMS Breakdown?", value=False)
 
                 submitted = st.form_submit_button("Add Page Specification")
                 if submitted:
@@ -449,10 +516,11 @@ def main():
                         "meta_required": b_meta_required,
                         "schema_toggle": b_schema_toggle,
                         "custom_template": b_custom_template,
-                        "reinforce_eeat": reinforce_eeat_bulk,      # NEW
-                        "include_citations": include_citations_bulk, # NEW
-                        "practice_location": practice_location_bulk, # NEW
-                        "practice_name": practice_name_bulk          # NEW
+                        "reinforce_eeat": reinforce_eeat_bulk,
+                        "include_citations": include_citations_bulk,
+                        "practice_location": practice_location_bulk,
+                        "practice_name": practice_name_bulk,
+                        "detailed_breakdown": detailed_breakdown_bulk
                     }
                     st.session_state.page_specs.append(new_spec)
                     st.success(f"Added a new {b_page_type} spec!")
@@ -467,7 +535,6 @@ def main():
                 st.write(f"Keywords: {spec['keywords']}")
                 st.write(f"Tone: {spec['tone_of_voice']} | Style: {spec['writing_style']}")
                 st.write(f"Meta Required: {spec['meta_required']} | Schema: {spec['schema_toggle']}")
-                # Display advanced fields
                 if spec["reinforce_eeat"]:
                     st.write("E-E-A-T: On")
                 if spec["include_citations"]:
@@ -476,9 +543,11 @@ def main():
                     st.write(f"Location: {spec['practice_location']}")
                 if spec["practice_name"]:
                     st.write(f"Practice Name: {spec['practice_name']}")
-
+                if spec["detailed_breakdown"]:
+                    st.write("Detailed CMS Breakdown: On")
                 if spec['custom_template']:
                     st.write(f"**Custom Template**: {spec['custom_template'][:60]}... (truncated)")
+
                 remove_btn = st.button(f"Remove Page {idx+1}", key=f"remove_{idx}")
                 if remove_btn:
                     st.session_state.page_specs.pop(idx)
@@ -505,11 +574,11 @@ def main():
                                 structured_data=spec["schema_toggle"],
                                 custom_template=spec["custom_template"],
                                 variation_num=1,
-                                # Pass in advanced fields
                                 reinforce_eeat=spec["reinforce_eeat"],
                                 include_citations=spec["include_citations"],
                                 practice_location=spec["practice_location"],
-                                practice_name=spec["practice_name"]
+                                practice_name=spec["practice_name"],
+                                detailed_breakdown=spec["detailed_breakdown"]
                             )
                             bulk_generated_text = generate_content_with_chatgpt(
                                 api_key=user_api_key,
@@ -571,7 +640,8 @@ def main():
                         "reinforce_eeat": False,
                         "include_citations": False,
                         "practice_location": "",
-                        "practice_name": ""
+                        "practice_name": "",
+                        "detailed_breakdown": False
                     }
 
                 config = st.session_state.full_site_configs[pg_type]
@@ -596,7 +666,7 @@ def main():
                     )
                     config["schema_toggle"] = st.checkbox(f"{pg_type}: Include Schema?", value=config["schema_toggle"])
                 
-                # NEW: Additional advanced fields
+                # Additional advanced fields
                 config["reinforce_eeat"] = st.checkbox(
                     f"{pg_type}: Reinforce E-E-A-T?", value=config["reinforce_eeat"]
                 )
@@ -611,6 +681,13 @@ def main():
                     f"{pg_type}: Practice/Doctor Name",
                     value=config["practice_name"]
                 )
+
+                # Detailed breakdown for Full-Site
+                if pg_type in PAGE_BREAKDOWNS.keys():
+                    config["detailed_breakdown"] = st.checkbox(
+                        f"{pg_type}: Use Detailed CMS Breakdown?",
+                        value=config["detailed_breakdown"]
+                    )
 
                 config["custom_template"] = st.text_area(
                     f"{pg_type}: Custom Template (Optional)",
@@ -638,11 +715,11 @@ def main():
                             structured_data=cfg["schema_toggle"],
                             custom_template=cfg["custom_template"],
                             variation_num=1,
-                            # Pass advanced fields here
                             reinforce_eeat=cfg["reinforce_eeat"],
                             include_citations=cfg["include_citations"],
                             practice_location=cfg["practice_location"],
-                            practice_name=cfg["practice_name"]
+                            practice_name=cfg["practice_name"],
+                            detailed_breakdown=cfg["detailed_breakdown"]
                         )
                         site_gen_text = generate_content_with_chatgpt(
                             api_key=user_api_key,
