@@ -14,6 +14,15 @@ except ImportError:
     class RateLimitError(OpenAIError):
         pass
 
+# For approximate reading level checks (Flesch Reading Ease), we'll use textstat if available
+# You can install textstat with: pip install textstat
+try:
+    import textstat
+    TEXTSTAT_AVAILABLE = True
+except ImportError:
+    TEXTSTAT_AVAILABLE = False
+
+
 # ==========================================================
 # =               APP CONFIG / PAGE SETUP                  =
 # ==========================================================
@@ -60,11 +69,13 @@ if "templates" not in st.session_state:
 # ==========================================================
 # =                PAGE/SECTION BREAKDOWNS                =
 # ==========================================================
-PAGE_BREAKDOWNS = {
-    "Homepage": [
+# Pre-set breakdowns from "Essentials Development Scope" or "Top Level Process Ideation"
+# Just as examples:
+PRESET_BREAKDOWNS = {
+    "Essentials-Homepage": [
         "H1 [20-60 characters]",
         "Tagline [6-12 words]",
-        "Intro Blurb [15-20 words]",
+        "Intro blurb [15-20 words]",
         "H2 [30-70 characters]",
         "Body 1 [3-5 sentences]",
         "H2-2 Services [30-70 characters]",
@@ -72,19 +83,23 @@ PAGE_BREAKDOWNS = {
         "H2-3 [30-70 characters]",
         "Body 2 [3-5 sentences]",
         "H2-4 [About] [30-70 characters]",
-        "Body 3 [3-5 sentences]"
+        "Body 3 [3-5 sentences]",
+        "Title Tag [60 characters max]",
+        "Meta Description [150-160 characters]"
     ],
-    "Service Page": [
+    "Essentials-Service": [
         "H1 [20-60 characters]",
-        "Intro Blurb [15-20 words]",
+        "Intro blurb [15-20 words]",
         "H2 [30-70 characters]",
         "Body 1 [3-5 sentences]",
         "H2-2 [30-70 characters]",
         "Body 2 [3-5 sentences]",
         "H2-4 [About] [30-70 characters]",
-        "Body 3 [3-5 sentences]"
-    ]
-    # ... You can add more defaults if desired
+        "Body 3 [3-5 sentences]",
+        "Title Tag [60 characters max]",
+        "Meta Description [150-160 characters]"
+    ],
+    # Add more from your PDFs as needed
 }
 
 def format_breakdown_list(breakdown_list) -> str:
@@ -101,7 +116,7 @@ def format_breakdown_list(breakdown_list) -> str:
 # ==========================================================
 # =             OPENAI API CONTENT GENERATION             =
 # ==========================================================
-def generate_content_with_chatgpt(
+def call_openai_chat(
     api_key: str,
     system_prompt: str,
     user_prompt: str,
@@ -111,14 +126,14 @@ def generate_content_with_chatgpt(
     max_retries: int = 3
 ) -> str:
     """
-    Calls openai.ChatCompletion with a retry mechanism for rate-limit errors.
-    If 'insufficient_quota' is detected, shows an error about usage/plan.
+    Helper function to call the chat API with rate limit handling.
     """
+    import openai
     openai.api_key = api_key
 
     for attempt in range(max_retries):
         try:
-            response = openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -150,8 +165,76 @@ def generate_content_with_chatgpt(
                 st.error(f"OpenAI API Error (attempt {attempt+1}/{max_retries}): {error_msg}")
                 if attempt == max_retries - 1:
                     return ""
-
     return ""
+
+
+def generate_content_with_post_checks(
+    api_key: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    reading_ease_target: float,
+    max_tries_for_reading: int = 2
+) -> str:
+    """
+    Generate content with optional post-generation checks:
+      1. If reading ease is available (textstat) and user sets a target, re-refine if the content is too 'difficult'.
+      2. Potentially parse out headings and ensure they don't exceed certain character lengths, re-refine if needed.
+    """
+    content = call_openai_chat(
+        api_key=api_key,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
+    if not content:
+        return ""
+
+    # Post-check #1: Reading level (optional, only if textstat installed and reading_ease_target > 0)
+    if TEXTSTAT_AVAILABLE and reading_ease_target > 0:
+        tries = 0
+        while tries < max_tries_for_reading:
+            flesch = textstat.flesch_reading_ease(content)
+            # The Flesch scale: higher is easier. 
+            # If we want ~70-80, we check if it's below 70 => too complex => refine
+            # This is a naive approach, but enough to show the concept.
+            if flesch < reading_ease_target:
+                refine_prompt = (
+                    f"Your text has a Flesch Reading Ease of about {flesch}, "
+                    f"which is below the target of {reading_ease_target}. "
+                    "Please simplify the language, shorten sentences, and rephrase for clarity, "
+                    "keeping the same essential meaning and instructions.\n\n"
+                    "Current text:\n"
+                    f"{content}\n"
+                )
+                # re-call the model
+                content_refined = call_openai_chat(
+                    api_key=api_key,
+                    system_prompt=system_prompt,
+                    user_prompt=refine_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                if not content_refined:
+                    break
+                content = content_refined
+                tries += 1
+            else:
+                # It's within range, break
+                break
+
+    # Post-check #2: Example of heading max length enforcement (e.g. H1 < 60 chars).
+    # This requires some parsing of headings from content. Let's do a simple approach:
+    # We'll look for lines that might start with "H1:" or something. If found, we measure length. 
+    # This is very naive—real code might parse from structured output. 
+    # We'll show the approach but skip implementing a robust parser here.
+    # If you want to strictly parse, you'd need a consistent format from GPT (like "H1: <text>").
+    # For demonstration, we won't do a second round of re-calls. 
+    # But it's easy to do the same approach as reading level if needed.
+
+    return content
 
 
 def generate_prompt(
@@ -170,18 +253,21 @@ def generate_prompt(
     practice_location: str = "",
     practice_name: str = "",
     detailed_breakdown: bool = False,
-    custom_breakdown_fields: List[str] = None
+    custom_breakdown_fields: List[str] = None,
+    formula_heading: bool = False,
+    practice_type: str = "",
+    flesch_target: float = 0.0  # e.g. 70.0 => aim for ~70 reading ease
 ) -> str:
     """
     Constructs a user prompt for ChatGPT based on user inputs.
-    *Important:* We do NOT want the final text to mention "SEO" or "local SEO."
-    Instead, we instruct GPT behind the scenes to incorporate location/keywords subtly.
+    *We also add an optional 'formula_heading' boolean. If True, we direct GPT to create something like:
+      'Top {keyword} {practice_type} in {location}'
+    *We can also mention reading ease if the user wants that in the instructions.
     """
     if custom_breakdown_fields is None:
         custom_breakdown_fields = []
 
     # Build a behind-the-scenes instruction list for system usage
-    # but the final text must not contain phrases like "SEO," "local SEO," or "search engine."
     base_instructions = [
         f"Page Type: {page_type}",
         f"Approximate Word Count: ~{word_count} words",
@@ -193,7 +279,6 @@ def generate_prompt(
         "Do not explicitly mention SEO or local SEO in the final text."
     ]
 
-    # Conditionals for E-E-A-T, references/citations, local emphasis
     if reinforce_eeat:
         base_instructions.append(
             "Demonstrate strong E-E-A-T principles: highlight expertise, authority, trustworthiness, and experience."
@@ -211,7 +296,21 @@ def generate_prompt(
             f"Mention the practice name: {practice_name}, but do not mention 'SEO'."
         )
 
-    # If user has a custom template, incorporate it
+    # If user wants formula heading
+    if formula_heading and practice_type and keywords:
+        # We'll just instruct GPT about the formula
+        # For example: "H1: 'Top {keyword} {practice_type} in {location}' under 60 chars"
+        base_instructions.append(
+            f"Use a heading formula, for example: 'Top {keywords[0]} {practice_type} in {practice_location}' "
+            "and keep it under ~60 characters if possible. Do not mention that this is an SEO formula."
+        )
+
+    # If user wants reading ease
+    if flesch_target > 0:
+        base_instructions.append(
+            f"Aim for a Flesch Reading Ease score of at least {flesch_target}, meaning simpler language for broader readability."
+        )
+
     if custom_template.strip():
         custom_section = (
             "\n\nCustom Template or Structure Provided:\n" 
@@ -220,24 +319,16 @@ def generate_prompt(
     else:
         custom_section = ""
 
-    # Variation note
     variation_text = f"Generate {variation_num} variations of the content.\n" if variation_num > 1 else ""
 
-    # Detailed breakdown instructions
     breakdown_instructions = ""
     if detailed_breakdown:
         if custom_breakdown_fields:
             breakdown_instructions = format_breakdown_list(custom_breakdown_fields)
-        else:
-            if page_type in PAGE_BREAKDOWNS:
-                fallback = PAGE_BREAKDOWNS[page_type]
-                breakdown_instructions = format_breakdown_list(fallback)
-            else:
-                breakdown_instructions = ""
+        # (We could also load from PRESET_BREAKDOWNS if the user picks from a dropdown.)
         if breakdown_instructions:
             breakdown_instructions = "\n\n" + breakdown_instructions
 
-    # Combine user_prompt
     user_prompt = (
         "You are creating a piece of content for a medical or health-related website. "
         "The text should never explicitly mention 'SEO' or 'local SEO,' but it can include natural references to the location or relevant terms. "
@@ -268,14 +359,14 @@ def generate_meta_brief(api_key: str, page_type: str, keywords: List[str]) -> st
         f"Create a short content brief for a {page_type} page that targets these terms: {', '.join(keywords)}. "
         "Include target audience, main goal, and any relevant local or brand elements without referencing SEO."
     )
-    return generate_content_with_chatgpt(api_key, system_msg, user_msg)
+    return call_openai_chat(api_key, system_msg, user_msg)
 
 
 # ==========================================================
 # =                STREAMLIT APP MAIN LOGIC                =
 # ==========================================================
 def main():
-    st.title("AI-Powered Content Generator for Medical Websites")
+    st.title("AI-Powered Content Generator for Medical Websites (Optimized)")
 
     # Sidebar: ask for OpenAI API Key
     st.sidebar.header("OpenAI API")
@@ -301,11 +392,9 @@ def main():
     if "custom_breakdown" not in st.session_state:
         st.session_state.custom_breakdown = {}  # e.g. { "Homepage": [list of field lines], ... }
 
+    # Utility: structured breakdown builder
     def structured_breakdown_builder(page_key: str):
-        """
-        A guided approach to building each breakdown field in a custom list.
-        The user can choose from common labels or define their own, with constraints.
-        """
+        """A guided approach to building each breakdown field in a custom list."""
         st.write(f"Custom Breakdown Fields for: {page_key}")
         if page_key not in st.session_state.custom_breakdown:
             st.session_state.custom_breakdown[page_key] = []
@@ -316,6 +405,13 @@ def main():
             remove_btn = st.button(f"Remove Field {idx+1}", key=f"cb_remove_{page_key}_{idx}")
             if remove_btn:
                 st.session_state.custom_breakdown[page_key].pop(idx)
+                st.experimental_rerun()
+
+        # Preset loads
+        preset_label = st.selectbox("Load Pre-Set Breakdown", ["(None)"] + list(PRESET_BREAKDOWNS.keys()))
+        if st.button("Apply Pre-Set Breakdown", key=f"apply_{page_key}"):
+            if preset_label != "(None)":
+                st.session_state.custom_breakdown[page_key] = PRESET_BREAKDOWNS[preset_label]
                 st.experimental_rerun()
 
         label_options = [
@@ -358,11 +454,14 @@ def main():
         st.subheader("Single-Page Content Generation")
         st.write("Generate content for a single page (e.g., a single blog post or service page).")
 
-        with st.expander("Advanced Settings (E-E-A-T, Citations, Local Mentions)", expanded=False):
+        with st.expander("Advanced Settings (E-E-A-T, Citations, Local Mentions, Reading Level, etc.)", expanded=False):
             reinforce_eeat = st.checkbox("Reinforce E-E-A-T Guidelines?", value=False)
             include_citations = st.checkbox("Include References/Citations?", value=False)
             practice_location = st.text_input("Practice Location (City, State)", value="")
             practice_name = st.text_input("Practice/Doctor Name", value="")
+            formula_heading_toggle = st.checkbox("Use formula heading? (e.g. 'Top {keyword} {practice_type} in {location}')")
+            practice_type_input = st.text_input("Practice Type (if using formula heading)", "")
+            reading_ease_target = st.number_input("Flesch Reading Ease target (0=skip)", 0.0, 100.0, 0.0, step=5.0, help="70-80 is fairly easy to read")
 
         page_type = st.selectbox(
             "Page Type",
@@ -439,7 +538,10 @@ def main():
                     practice_location=practice_location,
                     practice_name=practice_name,
                     detailed_breakdown=detailed_breakdown,
-                    custom_breakdown_fields=custom_breakdown_list
+                    custom_breakdown_fields=custom_breakdown_list,
+                    formula_heading=formula_heading_toggle,
+                    practice_type=practice_type_input,
+                    flesch_target=reading_ease_target
                 )
 
                 system_prompt = (
@@ -449,16 +551,19 @@ def main():
                     "Incorporate references to location or terms naturally if provided, but keep it patient-/reader-focused."
                 )
 
-                generated_text = generate_content_with_chatgpt(
+                generated_text = call_openai_chat(
                     api_key=user_api_key,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=temperature,
                     max_tokens=3000
                 )
+                if not generated_text:
+                    st.error("No content generated or an error occurred.")
+                    return
 
+                # If multiple variations requested, do a naive split by "Variation"
                 if number_of_variations > 1:
-                    # Split variations heuristically
                     variations = generated_text.split("Variation")
                     cleaned_variations = [v for v in variations if len(v.strip()) > 10]
                     if len(cleaned_variations) < number_of_variations:
@@ -467,11 +572,34 @@ def main():
                 else:
                     cleaned_variations = [generated_text]
 
-                st.session_state.generated_variations = cleaned_variations
+                # Optionally do post-generation checks for each variation
+                # We'll do the reading-level check for each variation if reading_ease_target > 0
+                final_variations = []
+                for var_text in cleaned_variations:
+                    # We'll pass each variation to generate_content_with_post_checks if the user wants reading ease or heading checks
+                    # For demonstration, let's do that if reading_ease_target > 0
+                    if reading_ease_target > 0 or True:
+                        # We'll call the specialized function
+                        refined_var = generate_content_with_post_checks(
+                            api_key=user_api_key,
+                            system_prompt=system_prompt,
+                            user_prompt=(
+                                "Please refine if needed, but keep the original structure. Here's the content:\n"
+                                f"{var_text}\n"
+                            ),
+                            temperature=temperature,
+                            max_tokens=3000,
+                            reading_ease_target=reading_ease_target
+                        )
+                        final_variations.append(refined_var)
+                    else:
+                        final_variations.append(var_text)
+
+                st.session_state.generated_variations = final_variations
 
                 for i, placeholder in enumerate(content_placeholders):
-                    if i < len(cleaned_variations):
-                        placeholder.markdown(f"**Variation {i+1}**\n\n{cleaned_variations[i]}")
+                    if i < len(final_variations):
+                        placeholder.markdown(f"**Variation {i+1}**\n\n{final_variations[i]}")
                     else:
                         placeholder.markdown(f"**Variation {i+1}**\n\n(No content generated)")
 
@@ -492,7 +620,7 @@ def main():
                         f"Original Content:\n{content_to_refine}\n\n"
                         f"Instructions:\n{refine_input}\n"
                     )
-                    refined_result = generate_content_with_chatgpt(
+                    refined_result = call_openai_chat(
                         api_key=user_api_key,
                         system_prompt=(
                             "You are an AI specialized in refining medically oriented, user-friendly text. "
@@ -573,6 +701,10 @@ def main():
                 practice_location_bulk = st.text_input("Practice Location (City, State)", value="")
                 practice_name_bulk = st.text_input("Practice/Doctor Name", value="")
 
+                formula_heading_bulk = st.checkbox("Use formula heading? (Top {keyword} {practice_type} in {location})")
+                practice_type_bulk = st.text_input("Practice Type for heading formula", value="")
+                reading_ease_target_bulk = st.number_input("Flesch Reading Ease target (0=skip)", 0.0, 100.0, 0.0, step=5.0)
+
                 detailed_breakdown_bulk = st.checkbox("Use Detailed Breakdown?", value=False)
                 if detailed_breakdown_bulk:
                     with st.expander("Custom Breakdown Builder", expanded=False):
@@ -594,7 +726,10 @@ def main():
                         "include_citations": include_citations_bulk,
                         "practice_location": practice_location_bulk,
                         "practice_name": practice_name_bulk,
-                        "detailed_breakdown": detailed_breakdown_bulk
+                        "detailed_breakdown": detailed_breakdown_bulk,
+                        "formula_heading": formula_heading_bulk,
+                        "practice_type": practice_type_bulk,
+                        "reading_ease_target": reading_ease_target_bulk
                     }
                     st.session_state.page_specs.append(new_spec)
                     st.success(f"Added a new {b_page_type} spec!")
@@ -618,6 +753,11 @@ def main():
                     st.write(f"Practice Name: {spec['practice_name']}")
                 if spec["detailed_breakdown"]:
                     st.write("Detailed Breakdown: On")
+                if spec["formula_heading"]:
+                    st.write("Formula Heading: On")
+                    st.write(f"Practice Type: {spec['practice_type']}")
+                if spec["reading_ease_target"] > 0:
+                    st.write(f"Flesch target: {spec['reading_ease_target']}")
 
                 if spec['custom_template']:
                     st.write(f"**Custom Template**: {spec['custom_template'][:60]}...")
@@ -654,21 +794,35 @@ def main():
                                 practice_location=spec["practice_location"],
                                 practice_name=spec["practice_name"],
                                 detailed_breakdown=spec["detailed_breakdown"],
-                                custom_breakdown_fields=custom_breakdown_list
+                                custom_breakdown_fields=custom_breakdown_list,
+                                formula_heading=spec["formula_heading"],
+                                practice_type=spec["practice_type"],
+                                flesch_target=spec["reading_ease_target"]
                             )
                             system_prompt = (
                                 "You are an AI assistant specialized in writing medically oriented, user-friendly web content. "
                                 "Follow E-E-A-T principles. Do not mention 'SEO' or 'local SEO' in the final text."
                             )
-                            bulk_generated_text = generate_content_with_chatgpt(
+                            bulk_generated_text = call_openai_chat(
                                 api_key=user_api_key,
                                 system_prompt=system_prompt,
                                 user_prompt=user_prompt,
                                 temperature=bulk_temp,
                                 max_tokens=3000
                             )
+
+                            # Optionally do reading level or other checks
+                            final_text = generate_content_with_post_checks(
+                                api_key=user_api_key,
+                                system_prompt=system_prompt,
+                                user_prompt=f"Refine if needed:\n{bulk_generated_text}",
+                                temperature=bulk_temp,
+                                max_tokens=3000,
+                                reading_ease_target=spec["reading_ease_target"]
+                            )
+
                             st.markdown(f"### Page {idx+1} Output ({spec['page_type']})")
-                            st.write(bulk_generated_text)
+                            st.write(final_text)
                             st.write("---")
 
             st.write("---")
@@ -712,7 +866,10 @@ def main():
                     "include_citations": False,
                     "practice_location": "",
                     "practice_name": "",
-                    "detailed_breakdown": False
+                    "detailed_breakdown": False,
+                    "formula_heading": False,
+                    "practice_type": "",
+                    "reading_ease_target": 0.0
                 }
 
         for pg_type in selected_pages:
@@ -751,6 +908,19 @@ def main():
                 cfg["practice_name"] = st.text_input(
                     f"{pg_type}: Practice Name",
                     value=cfg["practice_name"]
+                )
+
+                cfg["formula_heading"] = st.checkbox(
+                    f"{pg_type}: Use Formula Heading?",
+                    value=cfg["formula_heading"]
+                )
+                cfg["practice_type"] = st.text_input(
+                    f"{pg_type}: Practice Type (for formula heading)",
+                    value=cfg["practice_type"]
+                )
+                cfg["reading_ease_target"] = st.number_input(
+                    f"{pg_type}: Flesch Reading Ease target (0=skip)",
+                    0.0, 100.0, cfg["reading_ease_target"], step=5.0
                 )
 
                 cfg["detailed_breakdown"] = st.checkbox(
@@ -794,21 +964,34 @@ def main():
                             practice_location=cfg["practice_location"],
                             practice_name=cfg["practice_name"],
                             detailed_breakdown=cfg["detailed_breakdown"],
-                            custom_breakdown_fields=custom_breakdown_list
+                            custom_breakdown_fields=custom_breakdown_list,
+                            formula_heading=cfg["formula_heading"],
+                            practice_type=cfg["practice_type"],
+                            flesch_target=cfg["reading_ease_target"]
                         )
                         system_prompt = (
                             "You are an AI assistant specialized in writing medically oriented, user-friendly website content. "
                             "Do not mention SEO or local SEO in the final text. Adhere to E-E-A-T."
                         )
-                        site_gen_text = generate_content_with_chatgpt(
+                        site_gen_text = call_openai_chat(
                             api_key=user_api_key,
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
                             temperature=full_site_temp,
                             max_tokens=3000
                         )
+                        # Post-check
+                        final_site_text = generate_content_with_post_checks(
+                            api_key=user_api_key,
+                            system_prompt=system_prompt,
+                            user_prompt=f"Refine if needed:\n{site_gen_text}",
+                            temperature=full_site_temp,
+                            max_tokens=3000,
+                            reading_ease_target=cfg["reading_ease_target"]
+                        )
+
                         st.markdown(f"### {pg_type} Output")
-                        st.write(site_gen_text)
+                        st.write(final_site_text)
                         st.write("---")
 
         st.subheader("Clear Full Site Config")
