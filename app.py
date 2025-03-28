@@ -118,7 +118,7 @@ def generate_content_with_chatgpt(
 
     for attempt in range(max_retries):
         try:
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
