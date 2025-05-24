@@ -116,7 +116,7 @@ CONTENT STRUCTURE - Create content in this exact order:
     
     # Add word count
     if word_count:
-        prompt += f"\n\nTARGET WORD COUNT: Approximately {word_count} words total."
+        prompt += f"\n\nTARGET WORD COUNT: Write approximately {word_count} WORDS total (not characters). This means roughly {word_count // 6} to {word_count // 4} sentences depending on sentence length."
     
     # Add custom requirements
     if custom_requirements:
@@ -133,6 +133,7 @@ WRITING GUIDELINES:
 - Make each section distinct and valuable
 - Include clear formatting with headers and structure
 - Focus on customer benefits and real-world value
+- IMPORTANT: When a word count is specified, count WORDS not characters. A 1000-word article should contain approximately 1000 individual words.
 
 Format the output with clear section headers and proper structure for web content."""
     
@@ -219,7 +220,7 @@ Include:
     
     # Add word count
     if word_count:
-        prompt += f"\n\nTarget word count: approximately {word_count} words."
+        prompt += f"\n\nTarget word count: approximately {word_count} WORDS (not characters)."
     
     # Add custom requirements
     if custom_requirements:
@@ -637,17 +638,37 @@ def main():
         
         # Content analysis
         with st.expander("📊 Content Analysis"):
-            word_count_analysis = len(edited_content.split())
+            words = edited_content.split()
+            word_count_analysis = len(words)
             char_count = len(edited_content)
+            char_count_no_spaces = len(edited_content.replace(' ', ''))
             
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Word Count", word_count_analysis)
             with col2:
-                st.metric("Character Count", char_count)
+                st.metric("Characters (with spaces)", char_count)
             with col3:
+                st.metric("Characters (no spaces)", char_count_no_spaces)
+            
+            # Additional metrics
+            col4, col5, col6 = st.columns(3)
+            with col4:
                 reading_time = max(1, word_count_analysis // 200)
                 st.metric("Reading Time", f"{reading_time} min")
+            with col5:
+                if words:
+                    avg_word_length = sum(len(word.strip('.,!?;:"()[]')) for word in words) // len(words)
+                    st.metric("Avg Word Length", f"{avg_word_length} chars")
+                else:
+                    st.metric("Avg Word Length", "0 chars")
+            with col6:
+                sentences = len([s for s in edited_content.split('.') if s.strip()])
+                if sentences > 0:
+                    avg_words_per_sentence = word_count_analysis // sentences
+                    st.metric("Words/Sentence", avg_words_per_sentence)
+                else:
+                    st.metric("Words/Sentence", "0")
 
 if __name__ == "__main__":
     main()
