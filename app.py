@@ -539,31 +539,31 @@ def main():
             col1, col2 = st.columns(2)
             
             with col1:
-                business_name_adv = st.text_input("Business Name*", key="adv_business")
+                business_name_adv = st.text_input("Business Name*", key="template_business")
                 industry_adv = st.selectbox("Industry*", [
                     "Healthcare", "Legal", "Real Estate", "Automotive", "Restaurant",
                     "Fitness", "Beauty/Spa", "Construction", "Technology", "Consulting",
                     "Education", "Finance", "Retail", "Other"
-                ], key="adv_industry")
+                ], key="template_industry")
                 
                 target_audience_adv = st.selectbox("Target Audience", [
                     "General consumers", "Business owners", "Young professionals",
                     "Families", "Seniors", "Students", "Industry professionals"
-                ])
+                ], key="template_audience")
                 
                 # Word count
-                word_count = st.slider("Target Word Count", 200, 3000, 800, step=100)
+                word_count = st.slider("Target Word Count", 200, 3000, 800, step=100, key="template_word_count")
             
             with col2:
                 st.subheader("SEO Keywords")
                 primary_keywords = st.text_area("Primary Keywords (one per line)", 
-                    placeholder="Main keywords for this page", height=80)
+                    placeholder="Main keywords for this page", height=80, key="template_primary_keywords")
                 secondary_keywords = st.text_area("Secondary Keywords (one per line)", 
-                    placeholder="Supporting keywords", height=80)
+                    placeholder="Supporting keywords", height=80, key="template_secondary_keywords")
                 
                 custom_requirements = st.text_area("Custom Requirements",
                     placeholder="Any specific requirements, style preferences, or information to include...",
-                    height=80)
+                    height=80, key="template_custom_requirements")
         
             # Template generate button
             if st.button("🎨 Generate Template Content", type="primary", use_container_width=True):
