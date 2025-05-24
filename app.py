@@ -75,6 +75,77 @@ Instead, use:
 - Industry-specific terminology
 - Customer-focused messaging"""
 
+def create_template_prompt(template_sections: List[Dict], business_info: Dict, 
+                          keywords: List[str], word_count: int = None, 
+                          custom_requirements: str = None) -> str:
+    """Create a prompt based on the template structure"""
+    
+    # Build section descriptions
+    section_descriptions = {
+        "H1": "Create a compelling, attention-grabbing headline that immediately communicates the main value proposition",
+        "Intro": "Write 1-2 engaging paragraphs that hook the reader and frame the topic or service",
+        "Sub-H2": "Create a secondary header that introduces the next section of content",
+        "Body-Copy": "Write informative paragraph(s) that provide detailed information under the preceding header",
+        "Bullet-List": "Create a bulleted list of benefits, features, symptoms, or key points (3-6 items)",
+        "Quote-Testimonial": "Write a 20-40 word testimonial quote with customer name and relevant details",
+        "FAQ-Pair": "Create a frequently asked question with a 2-3 sentence informative answer",
+        "CTA": "Write a compelling call-to-action with clear next steps and action-oriented language",
+        "Closing": "Create a reassuring closing statement that encourages the next step",
+        "Service-Overview": "Provide a comprehensive overview of the service or product offering",
+        "Benefits-Section": "Detail the key advantages and value propositions for customers",
+        "Process-Steps": "Explain the step-by-step process or methodology in clear, actionable steps",
+        "Team-Bio": "Highlight team credentials, expertise, and what makes them qualified",
+        "Pricing-Info": "Present pricing information or consultation details in a clear, accessible way",
+        "Contact-Info": "Provide clear contact information including location, hours, and contact methods"
+    }
+    
+    prompt = f"""Create professional web content for {business_info['business_name']}, a {business_info['industry']} business.
+
+Business Details:
+- Name: {business_info['business_name']}
+- Industry: {business_info['industry']}
+- Target Audience: {business_info.get('target_audience', 'General consumers')}
+
+CONTENT STRUCTURE - Create content in this exact order:
+"""
+    
+    for i, section in enumerate(template_sections):
+        section_type = section['type']
+        section_name = section['name']
+        
+        prompt += f"\n{i+1}. **{section_name.upper()}**\n"
+        prompt += f"   {section_descriptions.get(section_type, 'Create appropriate content for this section.')}\n"
+    
+    # Add keyword requirements
+    if keywords:
+        keyword_text = ", ".join(keywords)
+        prompt += f"\n\nSEO KEYWORDS to integrate naturally: {keyword_text}"
+        prompt += "\nDistribute these keywords naturally throughout the content sections."
+    
+    # Add word count
+    if word_count:
+        prompt += f"\n\nTARGET WORD COUNT: Approximately {word_count} words total."
+    
+    # Add custom requirements
+    if custom_requirements:
+        prompt += f"\n\nCUSTOM REQUIREMENTS: {custom_requirements}"
+    
+    prompt += """
+
+WRITING GUIDELINES:
+- Use professional, engaging language that doesn't sound AI-generated
+- Avoid generic phrases like "cutting-edge," "world-class," "seamless experience"
+- Include specific, concrete benefits rather than vague promises  
+- Write in a conversational yet professional tone
+- Ensure smooth flow between sections
+- Make each section distinct and valuable
+- Include clear formatting with headers and structure
+- Focus on customer benefits and real-world value
+
+Format the output with clear section headers and proper structure for web content."""
+    
+    return prompt
+
 def create_content_prompt(content_type: str, business_info: Dict, keywords: List[str], 
                          sections: List[str] = None, word_count: int = None, 
                          custom_requirements: str = None) -> str:
@@ -184,7 +255,7 @@ def main():
     generator = ContentGenerator(api_key)
     
     # Main interface tabs
-    tab1, tab2, tab3 = st.tabs(["🎯 Quick Generate", "🔧 Advanced Options", "📝 Content History"])
+    tab1, tab2, tab3 = st.tabs(["🎯 Quick Generate", "🏗️ Template Builder", "📝 Content History"])
     
     with tab1:
         st.header("Quick Content Generation")
@@ -265,90 +336,269 @@ def main():
                         st.success("Content generated successfully!")
     
     with tab2:
-        st.header("Advanced Content Options")
+        st.header("Template Builder")
+        st.markdown("*Build your content page structure by selecting sections in order*")
         
-        col1, col2 = st.columns(2)
+        # Initialize template in session state
+        if 'page_template' not in st.session_state:
+            st.session_state.page_template = []
+        
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.subheader("Detailed Configuration")
+            st.subheader("📋 Available Content Sections")
+            st.markdown("*Click to add sections to your template*")
             
-            # Business details
-            business_name_adv = st.text_input("Business Name", key="adv_business")
-            industry_adv = st.selectbox("Industry", [
-                "Healthcare", "Legal", "Real Estate", "Automotive", "Restaurant",
-                "Fitness", "Beauty/Spa", "Construction", "Technology", "Consulting",
-                "Education", "Finance", "Retail", "Other"
-            ], key="adv_industry")
+            # Define content section options with descriptions
+            section_definitions = {
+                "H1": {
+                    "name": "H1 - Main Headline",
+                    "description": "Main page headline (1 only)",
+                    "icon": "🎯"
+                },
+                "Intro": {
+                    "name": "Intro Paragraph",
+                    "description": "1–2-paragraph hook that frames the topic or service",
+                    "icon": "📝"
+                },
+                "Sub-H2": {
+                    "name": "Sub-H2 Header",
+                    "description": "Secondary header to split body content",
+                    "icon": "📑"
+                },
+                "Body-Copy": {
+                    "name": "Body Copy",
+                    "description": "Paragraph(s) under a Sub-H2",
+                    "icon": "📄"
+                },
+                "Bullet-List": {
+                    "name": "Bullet List",
+                    "description": "Benefits, symptoms, checklist, features, etc.",
+                    "icon": "🔸"
+                },
+                "Quote-Testimonial": {
+                    "name": "Quote/Testimonial",
+                    "description": "20-40 words with customer name and title",
+                    "icon": "💬"
+                },
+                "FAQ-Pair": {
+                    "name": "FAQ Pair",
+                    "description": "Question + 2-3-sentence answer",
+                    "icon": "❓"
+                },
+                "CTA": {
+                    "name": "Call to Action",
+                    "description": "1-sentence prompt + button label/URL",
+                    "icon": "🚀"
+                },
+                "Closing": {
+                    "name": "Closing Statement",
+                    "description": "Reassurance/next-step line (often before footer)",
+                    "icon": "✅"
+                },
+                "Service-Overview": {
+                    "name": "Service Overview",
+                    "description": "Detailed explanation of service/product",
+                    "icon": "🛠️"
+                },
+                "Benefits-Section": {
+                    "name": "Benefits Section",
+                    "description": "Key advantages and value propositions",
+                    "icon": "⭐"
+                },
+                "Process-Steps": {
+                    "name": "Process/How It Works",
+                    "description": "Step-by-step process or methodology",
+                    "icon": "🔄"
+                },
+                "Team-Bio": {
+                    "name": "Team/About Section",
+                    "description": "Staff credentials and expertise",
+                    "icon": "👥"
+                },
+                "Pricing-Info": {
+                    "name": "Pricing Information",
+                    "description": "Cost details or consultation info",
+                    "icon": "💰"
+                },
+                "Contact-Info": {
+                    "name": "Contact Information",
+                    "description": "Location, hours, contact details",
+                    "icon": "📞"
+                }
+            }
             
-            content_type_adv = st.selectbox("Content Type", [
-                "Home Page", "Service Page", "About Page", "Blog Post",
-                "Landing Page", "Product Page", "Category Page"
-            ], key="adv_content_type")
-            
-            # Word count
-            word_count = st.slider("Target Word Count", 200, 2000, 600, step=50)
-            
-            # Custom sections
-            st.subheader("Content Sections")
-            section_options = [
-                "Hero Section", "Service Overview", "Benefits Section",
-                "Process/How It Works", "Testimonials", "FAQ",
-                "Call to Action", "About Team", "Service Areas",
-                "Before/After", "Pricing", "Contact Information"
-            ]
-            
-            selected_sections = st.multiselect("Select Sections to Include", section_options)
+            # Create buttons for each section type
+            for section_key, section_info in section_definitions.items():
+                col_btn1, col_btn2 = st.columns([3, 1])
+                with col_btn1:
+                    if st.button(f"{section_info['icon']} {section_info['name']}", 
+                                key=f"add_{section_key}", use_container_width=True):
+                        st.session_state.page_template.append({
+                            'type': section_key,
+                            'name': section_info['name'],
+                            'description': section_info['description'],
+                            'icon': section_info['icon']
+                        })
+                        st.rerun()
+                with col_btn2:
+                    st.markdown(f"<small>{section_info['description']}</small>", 
+                               unsafe_allow_html=True)
         
         with col2:
-            st.subheader("SEO & Keywords")
-            primary_keywords = st.text_area("Primary Keywords", 
-                placeholder="Main keywords for this page", height=80)
-            secondary_keywords = st.text_area("Secondary Keywords", 
-                placeholder="Supporting keywords", height=80)
+            st.subheader("🏗️ Your Page Template")
             
-            st.subheader("Brand Voice")
-            brand_personality = st.multiselect("Brand Personality", [
-                "Professional", "Friendly", "Authoritative", "Innovative",
-                "Trustworthy", "Approachable", "Expert", "Local"
-            ])
-            
-            custom_requirements = st.text_area("Custom Requirements",
-                placeholder="Any specific requirements, style preferences, or information to include...",
-                height=100)
-        
-        # Advanced generate button
-        if st.button("🎨 Generate Advanced Content", type="primary"):
-            if not business_name_adv or not industry_adv:
-                st.error("Please fill in business name and industry")
-            else:
-                all_keywords = []
-                if primary_keywords:
-                    all_keywords.extend([k.strip() for k in primary_keywords.split('\n') if k.strip()])
-                if secondary_keywords:
-                    all_keywords.extend([k.strip() for k in secondary_keywords.split('\n') if k.strip()])
+            if st.session_state.page_template:
+                st.markdown("*Your content will be generated in this order:*")
                 
-                business_info = {
-                    'business_name': business_name_adv,
-                    'industry': industry_adv,
-                    'brand_personality': ', '.join(brand_personality) if brand_personality else 'Professional'
+                # Display current template
+                for i, section in enumerate(st.session_state.page_template):
+                    col_section, col_up, col_down, col_remove = st.columns([6, 1, 1, 1])
+                    
+                    with col_section:
+                        st.markdown(f"**{i+1}.** {section['icon']} {section['name']}")
+                        st.caption(section['description'])
+                    
+                    with col_up:
+                        if i > 0 and st.button("⬆️", key=f"up_{i}", help="Move up"):
+                            st.session_state.page_template[i], st.session_state.page_template[i-1] = \
+                                st.session_state.page_template[i-1], st.session_state.page_template[i]
+                            st.rerun()
+                    
+                    with col_down:
+                        if i < len(st.session_state.page_template) - 1 and st.button("⬇️", key=f"down_{i}", help="Move down"):
+                            st.session_state.page_template[i], st.session_state.page_template[i+1] = \
+                                st.session_state.page_template[i+1], st.session_state.page_template[i]
+                            st.rerun()
+                    
+                    with col_remove:
+                        if st.button("🗑️", key=f"remove_{i}", help="Remove section"):
+                            st.session_state.page_template.pop(i)
+                            st.rerun()
+                    
+                    st.divider()
+                
+                # Template actions
+                col_clear, col_save = st.columns(2)
+                with col_clear:
+                    if st.button("🗑️ Clear Template", use_container_width=True):
+                        st.session_state.page_template = []
+                        st.rerun()
+                
+                with col_save:
+                    # Could add template saving functionality here
+                    st.markdown("*Template ready for generation*")
+            
+            else:
+                st.info("👆 Click sections from the left to build your page template")
+                
+                # Quick template presets
+                st.subheader("📋 Quick Templates")
+                
+                preset_templates = {
+                    "Standard Service Page": [
+                        {'type': 'H1', 'name': 'H1 - Main Headline', 'description': 'Main page headline', 'icon': '🎯'},
+                        {'type': 'Intro', 'name': 'Intro Paragraph', 'description': 'Hook that frames the service', 'icon': '📝'},
+                        {'type': 'Service-Overview', 'name': 'Service Overview', 'description': 'Detailed service explanation', 'icon': '🛠️'},
+                        {'type': 'Benefits-Section', 'name': 'Benefits Section', 'description': 'Key advantages', 'icon': '⭐'},
+                        {'type': 'Process-Steps', 'name': 'Process/How It Works', 'description': 'Step-by-step process', 'icon': '🔄'},
+                        {'type': 'Quote-Testimonial', 'name': 'Quote/Testimonial', 'description': 'Customer testimonial', 'icon': '💬'},
+                        {'type': 'FAQ-Pair', 'name': 'FAQ Pair', 'description': 'Common questions', 'icon': '❓'},
+                        {'type': 'CTA', 'name': 'Call to Action', 'description': 'Conversion prompt', 'icon': '🚀'},
+                        {'type': 'Closing', 'name': 'Closing Statement', 'description': 'Final reassurance', 'icon': '✅'}
+                    ],
+                    "Simple Landing Page": [
+                        {'type': 'H1', 'name': 'H1 - Main Headline', 'description': 'Main page headline', 'icon': '🎯'},
+                        {'type': 'Intro', 'name': 'Intro Paragraph', 'description': 'Compelling hook', 'icon': '📝'},
+                        {'type': 'Benefits-Section', 'name': 'Benefits Section', 'description': 'Key benefits', 'icon': '⭐'},
+                        {'type': 'Quote-Testimonial', 'name': 'Quote/Testimonial', 'description': 'Social proof', 'icon': '💬'},
+                        {'type': 'CTA', 'name': 'Call to Action', 'description': 'Primary conversion', 'icon': '🚀'}
+                    ],
+                    "Blog Post Structure": [
+                        {'type': 'H1', 'name': 'H1 - Main Headline', 'description': 'Article title', 'icon': '🎯'},
+                        {'type': 'Intro', 'name': 'Intro Paragraph', 'description': 'Article introduction', 'icon': '📝'},
+                        {'type': 'Sub-H2', 'name': 'Sub-H2 Header', 'description': 'Section header', 'icon': '📑'},
+                        {'type': 'Body-Copy', 'name': 'Body Copy', 'description': 'Main content', 'icon': '📄'},
+                        {'type': 'Bullet-List', 'name': 'Bullet List', 'description': 'Key points', 'icon': '🔸'},
+                        {'type': 'Sub-H2', 'name': 'Sub-H2 Header', 'description': 'Another section', 'icon': '📑'},
+                        {'type': 'Body-Copy', 'name': 'Body Copy', 'description': 'More content', 'icon': '📄'},
+                        {'type': 'Closing', 'name': 'Closing Statement', 'description': 'Article conclusion', 'icon': '✅'},
+                        {'type': 'CTA', 'name': 'Call to Action', 'description': 'Reader next step', 'icon': '🚀'}
+                    ]
                 }
                 
-                with st.spinner("Creating customized content..."):
-                    prompt = create_content_prompt(
-                        content_type_adv, business_info, all_keywords,
-                        selected_sections, word_count, custom_requirements
-                    )
-                    content = generator.generate_content(prompt, max_tokens=3000)
+                for template_name, template_structure in preset_templates.items():
+                    if st.button(f"📋 Use {template_name}", key=f"preset_{template_name}"):
+                        st.session_state.page_template = template_structure.copy()
+                        st.rerun()
+        
+        # Business Information and Generation
+        if st.session_state.page_template:
+            st.header("🏢 Business Information")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                business_name_adv = st.text_input("Business Name*", key="adv_business")
+                industry_adv = st.selectbox("Industry*", [
+                    "Healthcare", "Legal", "Real Estate", "Automotive", "Restaurant",
+                    "Fitness", "Beauty/Spa", "Construction", "Technology", "Consulting",
+                    "Education", "Finance", "Retail", "Other"
+                ], key="adv_industry")
+                
+                target_audience_adv = st.selectbox("Target Audience", [
+                    "General consumers", "Business owners", "Young professionals",
+                    "Families", "Seniors", "Students", "Industry professionals"
+                ])
+                
+                # Word count
+                word_count = st.slider("Target Word Count", 200, 3000, 800, step=100)
+            
+            with col2:
+                st.subheader("SEO Keywords")
+                primary_keywords = st.text_area("Primary Keywords (one per line)", 
+                    placeholder="Main keywords for this page", height=80)
+                secondary_keywords = st.text_area("Secondary Keywords (one per line)", 
+                    placeholder="Supporting keywords", height=80)
+                
+                custom_requirements = st.text_area("Custom Requirements",
+                    placeholder="Any specific requirements, style preferences, or information to include...",
+                    height=80)
+        
+            # Template generate button
+            if st.button("🎨 Generate Template Content", type="primary", use_container_width=True):
+                if not business_name_adv or not industry_adv:
+                    st.error("Please fill in business name and industry")
+                else:
+                    all_keywords = []
+                    if primary_keywords:
+                        all_keywords.extend([k.strip() for k in primary_keywords.split('\n') if k.strip()])
+                    if secondary_keywords:
+                        all_keywords.extend([k.strip() for k in secondary_keywords.split('\n') if k.strip()])
                     
-                    if content:
-                        st.session_state.generated_content = content
-                        st.session_state.content_history.append({
-                            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
-                            'type': content_type_adv,
-                            'business': business_name_adv,
-                            'content': content
-                        })
-                        st.success("Advanced content generated successfully!")
+                    business_info = {
+                        'business_name': business_name_adv,
+                        'industry': industry_adv,
+                        'target_audience': target_audience_adv
+                    }
+                    
+                    with st.spinner("Generating content using your template..."):
+                        # Create template-based prompt
+                        template_prompt = create_template_prompt(
+                            st.session_state.page_template, business_info, 
+                            all_keywords, word_count, custom_requirements
+                        )
+                        content = generator.generate_content(template_prompt, max_tokens=4000)
+                        
+                        if content:
+                            st.session_state.generated_content = content
+                            st.session_state.content_history.append({
+                                'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
+                                'type': 'Template Build',
+                                'business': business_name_adv,
+                                'content': content
+                            })
+                            st.success("Template content generated successfully!")
     
     with tab3:
         st.header("Content History")
