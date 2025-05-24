@@ -1,13 +1,5 @@
 import streamlit as st
-import openai
-import json
-import time
-from datetime import datetime
-from typing import List, Dict
-from pathlib import Path
-
-import streamlit as st
-import openai
+from openai import OpenAI
 import json
 import re
 from typing import List, Dict, Any
@@ -28,12 +20,12 @@ if 'content_history' not in st.session_state:
 
 class ContentGenerator:
     def __init__(self, api_key: str):
-        openai.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
         
     def generate_content(self, prompt: str, max_tokens: int = 2000) -> str:
         """Generate content using OpenAI API"""
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": self.get_system_prompt()},
